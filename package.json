@@ -1,0 +1,24 @@
+{
+  "name": "desktop-monitor",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "ui:dev": "pnpm --dir ui dev",
+    "ui:build": "pnpm --dir ui build",
+    "install:mock": "node scripts/install-mock.mjs",
+    "install:collector": "node scripts/install-sys-collector.mjs",
+    "install:battery": "node scripts/install-device-battery.mjs"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "esbuild": "^0.28.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

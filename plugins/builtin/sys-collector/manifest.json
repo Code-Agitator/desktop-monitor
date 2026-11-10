@@ -1,0 +1,9 @@
+{
+  "id": "sys-collector",
+  "name": "系统采集",
+  "version": "0.1.0",
+  "protocolVersion": 1,
+  "entry": { "command": "SysCollector.exe", "args": [] },
+  "platforms": ["windows"],
+  "timeoutMs": 5000
+}

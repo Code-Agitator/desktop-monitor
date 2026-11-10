@@ -1,0 +1,16 @@
+# 统一换行：仓库里存 LF，二进制文件不做处理
+* text=auto
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.ttf binary
+*.otf binary
+*.woff binary
+*.woff2 binary
+*.exe binary
+*.dll binary
+*.pdb binary
+*.zip binary

@@ -1,0 +1,184 @@
+:root {
+  /* 卡片投影：只给桌面面板用，HUD 保持扁平（下面有 .hud 的覆盖规则） */
+  --card-elev: 0 10px 24px rgba(0, 0, 0, 0.45), 0 2px 5px rgba(0, 0, 0, 0.35);
+  --accent: #5ac8ff;
+  --violet: #b58cff;
+  --amber: #ffb454;
+  --ok: #46e08a;
+  --warn: #ffd166;
+  --bad: #ff6b6b;
+  --bad-start: #ff8a5c;
+  --text: #e8e8ea;
+  --text-dim: #9a9aa6;
+  --text-strong: #d6d6de;
+  --card-bg: rgb(18, 18, 22);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 18px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --track: rgba(255, 255, 255, 0.08);
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  cursor: default;
+}
+
+body {
+  font-family: "Segoe UI Variable Display", "Microsoft YaHei UI", system-ui, sans-serif;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+.stage {
+  position: absolute;
+  inset: 0;
+}
+
+.card {
+  position: absolute;
+  box-sizing: border-box;
+  container-type: size;
+  padding: 16px 18px;
+  border-radius: 18px;
+  border: 1px solid var(--card-border);
+  /* 底色本身不透明；透明度用整卡 opacity 控制，所以 100% = 完全不透明，调低连文字一起淡 */
+  background-color: var(--card-bg);
+  opacity: var(--card-alpha, 1);
+  overflow: hidden;
+  /* 卡片可能带自己的主题，文字色必须在本层解析变量，否则会继承 body 的全局主题色 */
+  color: var(--text);
+  box-shadow: var(--card-elev);
+}
+
+/* 背景单独一层：透明度只有一个旋钮（--card-alpha），文字不受影响 */
+
+
+.card.selected {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.resize-handle {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  margin-left: -7px;
+  margin-top: -7px;
+  border-radius: 4px;
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+  cursor: nwse-resize;
+  z-index: 5;
+}
+
+/* 融合块：同一 group 的卡片共享一块背景，成员自身不再画背景/边框/阴影 */
+.card-group {
+  position: absolute;
+  /* 边框必须算进宽高：否则去掉某条共享边框时，块的尺寸会差 1px，拼起来就对不齐 */
+  box-sizing: border-box;
+  border-radius: 18px;
+  /* 外轮廓用整体主题的边框色，各块自带主题时外框才不会断成几截 */
+  border: 1px solid var(--frame-border, var(--card-border));
+  pointer-events: none;
+  /* 底色由成员卡片各自画（每格可以有自己的主题） */
+  background: transparent;
+  box-shadow: var(--card-elev);
+  opacity: var(--card-alpha, 1);
+}
+
+.hud .card-group {
+  box-shadow: none;
+  /* HUD 尺寸小，圆角跟着收，否则四个角会被啃掉一块 */
+  border-radius: 10px;
+}
+
+.card.fused {
+  /* 整块的框由 .card-group 画，成员不要自己的边框：
+     即使是透明边框，1px 的边框区域也会让相邻两格之间漏出一条桌面 */
+  border-width: 0;
+  /* 投影也由整块负责，否则块内会互相压出阴影 */
+  box-shadow: none;
+}
+
+/* 融合块里每张卡片自己画底色：这样每格可以有独立主题（拼成马赛克），
+   而且在整块底色之上不会再叠一层（否则透明度会变成 0.92） */
+
+body.settings {
+  background: #141418;
+}
+
+.card.stale {
+  opacity: 0.55;
+}
+.card.hud-body {
+  background: transparent;
+}
+
+/* 桌面面板每秒都有数值更新；过渡动画会让透明全屏 WebView2 持续重绘。
+   预览（设置窗口）和 HUD 保留动画，面板上关掉以压低空闲占用。 */
+/* 预览里的过渡动画会让 2560×1440 的缩放画布持续合成（每个数值更新都触发 0.45s 动画），
+   这是设置页开着时 GPU 进程吃 CPU 的主因——预览不需要过渡 */
+.settings .card,
+.settings .card * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.panel-body .card,
+.panel-body .card * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.hud .card {
+  pointer-events: none;
+  /* HUD 直接浮在任意内容上：卡片投影会在浅色背景上叠出一整块灰底 */
+  box-shadow: none;
+}
+
+.error {
+  opacity: 0.72;
+  border-color: rgba(255, 107, 107, 0.32);
+}
+.card .age {
+  position: absolute;
+  right: 10px;
+  bottom: 6px;
+  font-size: 10px;
+  color: var(--text-dim);
+  letter-spacing: 0.2px;
+}
+
+.hud-body {
+  background: transparent;
+}
+
+/* 桌面面板每秒都有数值更新；过渡动画会让透明全屏 WebView2 持续重绘。
+   预览（设置窗口）和 HUD 保留动画，面板上关掉以压低空闲占用。 */
+.panel-body .card,
+.panel-body .card * {
+  transition: none !important;
+  animation: none !important;
+}
+
+.hud .card {
+  pointer-events: none;
+  /* HUD 直接浮在任意内容上：卡片投影会在浅色背景上叠出一整块灰底 */
+  box-shadow: none;
+}
+
+.error {
+  position: absolute;
+  left: 64px;
+  top: 64px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: rgba(120, 20, 20, 0.85);
+  font-size: 12px;
+}

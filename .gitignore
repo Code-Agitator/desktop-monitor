@@ -1,0 +1,28 @@
+# 依赖
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+target/
+src-tauri/gen/
+build/
+**/bin/
+**/obj/
+**/publish/
+
+# 日志 / 临时文件
+*.log
+docs/app-stderr-*.txt
+docs/app-stdout-*.txt
+docs/_*
+.hud-launch-*.txt
+*.pdb
+
+# 本地工具配置
+.claude/
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store

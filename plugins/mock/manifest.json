@@ -1,0 +1,9 @@
+{
+  "id": "mock",
+  "name": "模拟插件",
+  "version": "0.1.0",
+  "protocolVersion": 1,
+  "entry": { "command": "node", "args": ["index.cjs"] },
+  "platforms": ["windows"],
+  "timeoutMs": 3000
+}

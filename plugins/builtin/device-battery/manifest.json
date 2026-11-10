@@ -1,0 +1,9 @@
+{
+  "id": "device-battery",
+  "name": "设备电量",
+  "version": "0.1.0",
+  "protocolVersion": 1,
+  "entry": { "command": "DeviceBattery.exe", "args": [] },
+  "platforms": ["windows"],
+  "timeoutMs": 8000
+}
