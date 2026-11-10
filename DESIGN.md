@@ -415,6 +415,13 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **设备发现 / 绑定（2026-11-10）**：不再「扫到什么就出什么指标」，改成先发现、再由用户绑定。
+    - 协议：插件新增 devices 方法（返回 key/name/source/level/charging/bound）和真正的 setConfig（{bindings:[键...]}）；indings 缺省 = 未配置 → 全部视为已绑定（兼容旧配置）。
+    - 宿主：PluginManager::devices/set_config/get_config，配置落到 <config_dir>/desktop-monitor/plugins/<id>.config.json，**插件启动时自动重放**（setConfig 紧跟 initialize 之后）。IPC：get_plugin_devices / set_plugin_config / get_plugin_config。
+    - 插件内部：未绑定的设备不生成 *.level / *.state 指标，attery.devices 列表和 attery.status 也只统计已绑定的设备。
+    - 设置页「插件与诊断」顶部新增「设备」区块：设备名 / 来源（hidpp·aula·windows·ble）/ 电量 / 绑定按钮，另有「重新扫描」。
+    - 注意：设备键形如 dev-<hash>（由设备名 hash 而来），改名会导致键变化 → 需要重新绑定。
+
   - **狼蛛（AULA）F87 PRO 键盘电量（2026-11-10）**：桌面上的逆向项目 `狼蛛驱动逆向\f87ctl` 已经把协议摸清了，直接照抄。
     - 传输：HID **UsagePage 0xFF02** 的集合（无线 `3554:FA09` 接收器 / 有线 `258A:010C`），20 字节帧：`[0x13][cmd][总包数][包序号][(方向<<4)|长度][14B 数据][前 19 字节和]`。
     - 读电量用命令 **`0x4A`**，回 2 字节：`byte0` = 电量百分比，`byte1` 的 **bit4** = 充电中。

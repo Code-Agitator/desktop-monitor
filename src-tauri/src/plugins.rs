@@ -223,6 +223,49 @@ impl PluginManager {
         &self.dir
     }
 
+    /// 插件配置文件（绑定关系等）：<plugins>/<id>.config.json
+    fn config_path(&self, id: &str) -> PathBuf {
+        self.dir.join(format!("{id}.config.json"))
+    }
+
+    pub fn load_config(&self, id: &str) -> Option<Value> {
+        let raw = std::fs::read_to_string(self.config_path(id)).ok()?;
+        serde_json::from_str(&raw).ok()
+    }
+
+    pub fn get_config(&self, id: &str) -> Value {
+        self.load_config(id).unwrap_or(Value::Null)
+    }
+
+    /// 写配置：推给运行中的插件 + 落盘，下次启动自动重放
+    pub fn set_config(&self, id: &str, config: Value) -> Result<(), String> {
+        let handle = self
+            .plugins
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| "插件未运行".to_string())?;
+        handle.request("setConfig", config.clone())?;
+        if let Ok(text) = serde_json::to_string_pretty(&config) {
+            let _ = std::fs::write(self.config_path(id), text);
+        }
+        Ok(())
+    }
+
+    /// 设备发现列表（给设置页选设备用）
+    pub fn devices(&self, id: &str, refresh: bool) -> Result<Value, String> {
+        let handle = self
+            .plugins
+            .lock()
+            .unwrap()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| "插件未运行".to_string())?;
+        // 罗技/狼蛛都要等设备回包，给宽一点
+        handle.request_with_timeout("devices", json!({ "refresh": refresh }), 20000)
+    }
+
     /// 设置窗口用：所有已发现插件的状态与指标数。
     pub fn list(&self) -> Vec<Value> {
         let known = self.known.lock().unwrap().clone();
@@ -505,6 +548,13 @@ impl PluginManager {
         let metrics = parse_metrics(&manifest.id, result.get("metrics"));
         self.store.add_defs(metrics.clone());
         let _ = self.app.emit("metric-defs", self.store.defs());
+
+        // 把上次保存的配置（设备绑定等）推给插件；没有配置文件就保持插件默认
+        if let Some(cfg) = self.load_config(&manifest.id) {
+            if let Err(e) = handle.request_with_timeout("setConfig", cfg, 5000) {
+                eprintln!("[plugin:{}] 应用配置失败：{e}", manifest.id);
+            }
+        }
         let _ = stop;
         self.emit_status(
             &manifest.id,

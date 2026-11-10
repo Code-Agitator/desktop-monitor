@@ -53,6 +53,31 @@ fn open_plugins_dir(plugins: tauri::State<'_, PluginState>) {
     let _ = std::process::Command::new("explorer").arg(plugins.0.dir()).spawn();
 }
 
+/// 设备发现列表（设置页「设备」区块用）
+#[tauri::command]
+fn get_plugin_devices(
+    plugins: tauri::State<'_, PluginState>,
+    plugin: String,
+    refresh: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    plugins.0.devices(&plugin, refresh.unwrap_or(false))
+}
+
+/// 插件配置（目前用于设备绑定）：推给插件并落盘
+#[tauri::command]
+fn set_plugin_config(
+    plugins: tauri::State<'_, PluginState>,
+    plugin: String,
+    config: serde_json::Value,
+) -> Result<(), String> {
+    plugins.0.set_config(&plugin, config)
+}
+
+#[tauri::command]
+fn get_plugin_config(plugins: tauri::State<'_, PluginState>, plugin: String) -> serde_json::Value {
+    plugins.0.get_config(&plugin)
+}
+
 #[tauri::command]
 fn get_diag(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> serde_json::Value {
     let base = app
@@ -179,6 +204,9 @@ pub fn run() {
             list_plugins,
             reload_plugins,
             open_plugins_dir,
+            get_plugin_devices,
+            set_plugin_config,
+            get_plugin_config,
             get_diag,
             resize_hud,
             popup_hud_menu,

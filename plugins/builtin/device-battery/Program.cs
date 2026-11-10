@@ -184,8 +184,20 @@ internal static class Program
                         break;
                     }
                     case "setConfig":
+                    {
+                        // 绑定列表：{"bindings": ["hidpp|罗技鼠标", ...]}；缺省 = 全部视为已绑定（兼容旧配置）
+                        collector?.ApplyConfig(req?["params"]);
                         Send(new { jsonrpc = "2.0", id, result = (object?)null });
                         break;
+                    }
+                    case "devices":
+                    {
+                        // 供设置页「设备发现」列表使用；refresh=true 时重新扫一遍
+                        var refresh = req?["params"]?["refresh"]?.GetValue<bool>() ?? false;
+                        var list = collector?.Devices(refresh) ?? new List<object>();
+                        Send(new { jsonrpc = "2.0", id, result = new { devices = list } });
+                        break;
+                    }
                     case "shutdown":
                         Send(new { jsonrpc = "2.0", id, result = (object?)null });
                         collector?.Dispose();
@@ -233,6 +245,69 @@ internal sealed class Collector : IDisposable
 
     /// 由主循环注入：设备集合变化时重报指标
     public Action<List<MetricDef>>? MetricsChanged { get; set; }
+
+    /// <summary>已绑定的设备键；null = 还没配置过（按「全部绑定」处理，兼容旧配置）</summary>
+    private HashSet<string>? _bindings;
+
+    /// <summary>是否已绑定该设备</summary>
+    public bool IsBound(string key) => _bindings is null || _bindings.Contains(key);
+
+    /// <summary>应用配置：{"bindings": [键...]}；给了空数组表示一个都不绑</summary>
+    public void ApplyConfig(System.Text.Json.Nodes.JsonNode? cfg)
+    {
+        var node = cfg?["bindings"];
+        if (node is not System.Text.Json.Nodes.JsonArray arr)
+        {
+            lock (_gate) _bindings = null;
+        }
+        else
+        {
+            var keys = arr
+                .Select(n => n?.GetValue<string>())
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .Select(s => s!)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            lock (_gate) _bindings = keys;
+        }
+
+        List<MetricDef> metrics;
+        lock (_gate) metrics = BuildMetrics();
+        Program.Log("info", $"绑定更新：{(_bindings is null ? "全部（未配置）" : _bindings.Count + " 个")}");
+        MetricsChanged?.Invoke(metrics);
+    }
+
+    /// <summary>设备发现列表（设置页用）；refresh=true 重新扫描</summary>
+    public List<object> Devices(bool refresh)
+    {
+        if (refresh)
+        {
+            var found = DiscoverAsync(probeAllBle: false).GetAwaiter().GetResult();
+            bool changed;
+            lock (_gate) changed = ReplaceDevices(found);
+            if (changed)
+            {
+                List<MetricDef> metrics;
+                lock (_gate) metrics = BuildMetrics();
+                MetricsChanged?.Invoke(metrics);
+            }
+        }
+
+        lock (_gate)
+        {
+            return _devices.Values
+                .OrderBy(d => d.Name, StringComparer.CurrentCulture)
+                .Select(d => (object)new
+                {
+                    key = d.Key,
+                    name = d.Name,
+                    source = d.Source,
+                    level = d.Level,
+                    charging = d.Charging,
+                    bound = IsBound(d.Key),
+                })
+                .ToList();
+        }
+    }
 
     public List<MetricDef> Initialize()
     {
@@ -322,7 +397,7 @@ internal sealed class Collector : IDisposable
             new("battery.devices", "设备电量", "list", null, IntervalMs, false, null, null),
             new("battery.status", "电量状态", "state", null, IntervalMs, false, null, null),
         };
-        foreach (var d in _devices.Values.OrderBy(d => d.Name, StringComparer.CurrentCulture))
+        foreach (var d in _devices.Values.Where(d => IsBound(d.Key)).OrderBy(d => d.Name, StringComparer.CurrentCulture))
         {
             list.Add(new MetricDef($"battery.{d.Key}.level", $"{d.Name} 电量", "ratio", "%", IntervalMs, true, 0, 1));
             list.Add(new MetricDef($"battery.{d.Key}.state", $"{d.Name} 状态", "state", null, IntervalMs, false, null, null));
@@ -344,15 +419,17 @@ internal sealed class Collector : IDisposable
                 if (id == "battery.devices")
                 {
                     result[id] = snapshot
+                        .Where(d => IsBound(d.Key))
                         .OrderBy(d => d.Name, StringComparer.CurrentCulture)
-                        .Select(d => new ListRow(d.Name, $"{d.Level}%", d.Level / 100.0))
+                        .Select(d => new ListRow(d.Name, d.Level + "%", d.Level / 100.0))
                         .ToArray();
                 }
                 else if (id == "battery.status")
                 {
-                    result[id] = snapshot.Count == 0
-                        ? "未发现带电量设备"
-                        : $"{snapshot.Count} 个设备在线";
+                    var bound = snapshot.Count(d => IsBound(d.Key));
+                    result[id] = bound == 0
+                        ? "没有已绑定的设备"
+                        : bound + " 个设备在线";
                 }
                 else
                 {

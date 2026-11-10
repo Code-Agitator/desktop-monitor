@@ -566,6 +566,60 @@ async function refreshPlugins() {
   } catch {}
 }
 
+/* ---------- 设备发现 / 绑定 ---------- */
+
+interface DiscoveredDevice {
+  key: string;
+  name: string;
+  source: string;
+  level: number;
+  charging: boolean;
+  bound: boolean;
+}
+
+const devices = ref<DiscoveredDevice[]>([]);
+const devicesLoading = ref(false);
+const devicesError = ref("");
+
+/** 拉设备列表；rescan = 让插件重新扫一遍（罗技/狼蛛要等回包，会慢一点） */
+async function refreshDevices(rescan = false) {
+  if (devicesLoading.value) return;
+  devicesLoading.value = true;
+  devicesError.value = "";
+  try {
+    const r = await invoke<{ devices: DiscoveredDevice[] }>("get_plugin_devices", {
+      plugin: "device-battery",
+      refresh: rescan,
+    });
+    devices.value = r?.devices ?? [];
+  } catch (e) {
+    devicesError.value = String(e);
+  } finally {
+    devicesLoading.value = false;
+  }
+}
+
+/** 绑定/解绑：把当前列表里「除这一项外仍绑定」的键集合发给插件 */
+async function toggleBinding(d: DiscoveredDevice) {
+  const bindings = devices.value.filter((x) => x.bound && x.key !== d.key).map((x) => x.key);
+  if (!d.bound) bindings.push(d.key);
+  try {
+    await invoke("set_plugin_config", {
+      plugin: "device-battery",
+      config: { bindings },
+    });
+    d.bound = !d.bound;
+    showNotice(`${d.name} 已${d.bound ? "绑定" : "解绑"}`);
+  } catch (e) {
+    showNotice("保存绑定失败：" + String(e));
+  }
+}
+
+// 第一次切到「插件」页时拉一次设备（扫描要等设备回包，别在启动时就做）
+watch(surface, (s) => {
+  if (s === "plugins" && !devices.value.length && !devicesLoading.value) void refreshDevices(false);
+});
+
 function reloadPlugins() {
   invoke("reload_plugins").catch(() => {});
   window.setTimeout(refreshPlugins, 800);
@@ -1475,6 +1529,33 @@ onUnmounted(() => {
 
     <div v-else class="plugins">
       <div class="plug-head">
+        <div class="plug-title">设备</div>
+        <div class="plug-actions">
+          <button class="btn small" :disabled="devicesLoading" @click="refreshDevices(true)">
+            {{ devicesLoading ? "扫描中…" : "重新扫描" }}
+          </button>
+        </div>
+      </div>
+      <p class="dev-hint">
+        只有「已绑定」的设备才会产生电量指标，可以同时绑定多个。无线设备休眠时列表里会暂时消失，按一下设备再点「重新扫描」。
+      </p>
+      <div class="dev-list">
+        <div v-for="d in devices" :key="d.key" class="dev-row">
+          <span class="dev-name">{{ d.name }}</span>
+          <span class="dev-src">{{ d.source }}</span>
+          <span class="dev-level">{{ d.level }}%{{ d.charging ? " · 充电中" : "" }}</span>
+          <button class="btn small" :class="{ bound: d.bound }" @click="toggleBinding(d)">
+            {{ d.bound ? "已绑定" : "绑定" }}
+          </button>
+        </div>
+        <div v-if="!devices.length && !devicesLoading" class="empty">
+          没有发现带电量的设备（键盘休眠时请按一下按键再扫描）
+        </div>
+        <div v-else-if="devicesLoading && !devices.length" class="empty">正在扫描设备…</div>
+      </div>
+      <div v-if="devicesError" class="empty">{{ devicesError }}</div>
+
+      <div class="plug-head" style="margin-top: 22px">
         <div class="plug-title">插件</div>
         <div class="plug-actions">
           <button class="btn small" @click="refreshPlugins">刷新</button>
@@ -2164,6 +2245,58 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 20px 24px;
   box-sizing: border-box;
+}
+
+.dev-hint {
+  margin: 0 0 10px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.dev-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.dev-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 68px 96px 78px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.dev-name {
+  font-size: 12px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dev-src {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.dev-level {
+  font-size: 12px;
+  color: var(--text-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.btn.small.bound {
+  color: #9fd8ff;
+  border-color: rgba(90, 200, 255, 0.5);
+  background: rgba(90, 200, 255, 0.14);
 }
 
 .plug-head {
