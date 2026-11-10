@@ -415,6 +415,13 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **设备与指标分离（2026-11-10 改版）**：绑定改成了「设备是设备、指标是指标」，卡片 = 设备 + 指标。
+    - 插件 `devices` 返回 `{key,name,source,level,charging,hidden,metrics:[{id,title,kind}]}`；每台设备自带它能出的指标清单，前端据此做两级选择。
+    - 「绑定」不再是全局门控：所有设备都会出指标；设备页的开关变成**隐藏/显示**（`setConfig {"hidden":[...]}`），隐藏后该设备指标从列表消失，已有卡片保留但显示 `--`。
+    - 设置页新增**设备**独立标签页（从「插件与诊断」里搬出来）：设备名 / 来源 / 电量 / 指标数 / 显示切换 + 重新扫描。
+    - 卡片检查器新增「设备」下拉（系统 / 通用 + 各设备），「指标」下拉按设备过滤 → 选设备自动落到该设备第一个指标。
+    - 坑：模板里画布容器原来是 `v-if="surface !== 'plugins'"`，加了 devices 页后它把设备页挡住了；改成 `surface === 'panel' || surface === 'hud'`，`v-else-if` 链才生效。
+
   - **设备发现 / 绑定（2026-11-10）**：不再「扫到什么就出什么指标」，改成先发现、再由用户绑定。
     - 协议：插件新增 devices 方法（返回 key/name/source/level/charging/bound）和真正的 setConfig（{bindings:[键...]}）；indings 缺省 = 未配置 → 全部视为已绑定（兼容旧配置）。
     - 宿主：PluginManager::devices/set_config/get_config，配置落到 <config_dir>/desktop-monitor/plugins/<id>.config.json，**插件启动时自动重放**（setConfig 紧跟 initialize 之后）。IPC：get_plugin_devices / set_plugin_config / get_plugin_config。

@@ -10,7 +10,7 @@ import { rendererFor, renderersFor } from "../renderers";
 import { THEMES, themeVars } from "../themes";
 import type { Bootstrap, MetricDef, PanelConfig, Sample, WindowConfig } from "../types";
 
-type Surface = "panel" | "hud" | "plugins";
+type Surface = "panel" | "hud" | "devices" | "plugins";
 
 const surface = ref<Surface>("panel");
 const panel = ref<PanelConfig | null>(null);
@@ -123,10 +123,34 @@ const metricGroups = computed(() => {
 /** 自绘下拉的选项 */
 const themeOptions = computed(() => THEMES.map((t) => ({ value: t.id, label: t.name })));
 
+/** 指标 → 设备键（插件上报的设备指标清单建立映射） */
+const deviceOfMetric = computed(() => {
+  const map = new Map<string, string>();
+  for (const d of devices.value) {
+    for (const m of d.metrics ?? []) map.set(m.id, d.key);
+  }
+  return map;
+});
+
+/** 指标所属设备（"" = 系统/通用） */
+const selectedDevice = computed(() => deviceOfMetric.value.get(selected.value?.metric ?? "") ?? "");
+
+const deviceOptions = computed(() => [
+  { value: "", label: "系统 / 通用" },
+  ...devices.value
+    .filter((d) => !d.hidden)
+    .map((d) => ({ value: d.key, label: `${d.name}（${d.level}%）` })),
+]);
+
+/** 只列当前设备（或系统）下的指标：指标 + 设备 = 一张卡片 */
 const metricOptions = computed(() => {
+  const dev = selectedDevice.value;
   const out: { value: string; label: string; group?: string }[] = [];
   for (const g of metricGroups.value) {
-    for (const m of g.items) out.push({ value: m.id, label: m.title, group: g.label });
+    for (const m of g.items) {
+      if ((deviceOfMetric.value.get(m.id) ?? "") !== dev) continue;
+      out.push({ value: m.id, label: m.title, group: dev ? undefined : g.label });
+    }
   }
   const cur = selected.value?.metric;
   if (cur && !out.some((o) => o.value === cur)) {
@@ -134,6 +158,21 @@ const metricOptions = computed(() => {
   }
   return out;
 });
+
+/** 切换设备：自动落到该设备的第一个指标上 */
+function setDevice(key: string) {
+  if (!selected.value) return;
+  let metricId: string | undefined;
+  if (key === "") {
+    metricId = metrics.value.find((m) => !deviceOfMetric.value.has(m.id))?.id;
+  } else {
+    const dev = devices.value.find((d) => d.key === key);
+    metricId =
+      dev?.metrics?.[0]?.id ??
+      metrics.value.find((m) => deviceOfMetric.value.get(m.id) === key)?.id;
+  }
+  if (metricId) setMetric(metricId);
+}
 
 const rendererOptions = computed(() =>
   views.value.map((r) => ({ value: r.id, label: r.name })),
@@ -553,7 +592,8 @@ interface DiscoveredDevice {
   source: string;
   level: number;
   charging: boolean;
-  bound: boolean;
+  hidden: boolean;
+  metrics?: { id: string; title: string; kind: string }[];
 }
 
 const devices = ref<DiscoveredDevice[]>([]);
@@ -578,25 +618,27 @@ async function refreshDevices(rescan = false) {
   }
 }
 
-/** 绑定/解绑：把当前列表里「除这一项外仍绑定」的键集合发给插件 */
-async function toggleBinding(d: DiscoveredDevice) {
-  const bindings = devices.value.filter((x) => x.bound && x.key !== d.key).map((x) => x.key);
-  if (!d.bound) bindings.push(d.key);
+/** 显示/隐藏设备：隐藏后该设备不再产生指标 */
+async function toggleHidden(d: DiscoveredDevice) {
+  const hidden = devices.value.filter((x) => x.hidden && x.key !== d.key).map((x) => x.key);
+  if (!d.hidden) hidden.push(d.key);
   try {
     await invoke("set_plugin_config", {
       plugin: "device-battery",
-      config: { bindings },
+      config: { hidden },
     });
-    d.bound = !d.bound;
-    showNotice(`${d.name} 已${d.bound ? "绑定" : "解绑"}`);
+    d.hidden = !d.hidden;
+    showNotice(`${d.name} 已${d.hidden ? "隐藏" : "显示"}`);
   } catch (e) {
-    showNotice("保存绑定失败：" + String(e));
+    showNotice("保存失败：" + String(e));
   }
 }
 
 // 第一次切到「插件」页时拉一次设备（扫描要等设备回包，别在启动时就做）
 watch(surface, (s) => {
-  if (s === "plugins" && !devices.value.length && !devicesLoading.value) void refreshDevices(false);
+  if ((s === "devices" || s === "plugins") && !devices.value.length && !devicesLoading.value) {
+    void refreshDevices(false);
+  }
 });
 
 function reloadPlugins() {
@@ -893,7 +935,7 @@ function findFreeSpot(w: number, h: number): { x: number; y: number } {
 
 function addCard() {
   if (!config.value) return;
-  const def = metrics.value[0];
+  const def = metrics.value.find((m) => !deviceOfMetric.value.has(m.id)) ?? metrics.value[0];
   const id = `card-${Date.now().toString(36)}`;
   const view = def ? renderersFor(def.kind)[0]?.id ?? "number" : "text";
   const size = rendererFor(view, def?.kind).defaultSize;
@@ -1148,6 +1190,8 @@ onMounted(async () => {
   }
   // 指标下拉要按插件分组，先把插件列表（含显示名）取一次
   refreshPlugins();
+  // 卡片里的指标要知道属于哪台设备，所以启动就拉一次（插件端有缓存，很快）
+  void refreshDevices(false);
   recalc();
   window.addEventListener("resize", recalc);
   window.addEventListener("keydown", onKey);
@@ -1188,12 +1232,15 @@ onUnmounted(() => {
         <button class="tab" :class="{ on: surface === 'hud' }" @click="switchSurface('hud')">
           置顶 HUD
         </button>
+        <button class="tab" :class="{ on: surface === 'devices' }" @click="switchSurface('devices')">
+          设备
+        </button>
         <button class="tab" :class="{ on: surface === 'plugins' }" @click="switchSurface('plugins')">
           插件与诊断
         </button>
       </div>
 
-      <label v-if="surface !== 'plugins'" class="theme">
+      <label v-if="surface === 'panel' || surface === 'hud'" class="theme">
         <span>主题</span>
         <Dropdown
           class="dd-theme"
@@ -1203,7 +1250,7 @@ onUnmounted(() => {
         />
       </label>
 
-      <label v-if="surface !== 'plugins'" class="opacity" title="只有透明度，没有其它视觉效果">
+      <label v-if="surface === 'panel' || surface === 'hud'" class="opacity" title="只有透明度，没有其它视觉效果">
         <span>不透明度</span>
         <input
           type="range"
@@ -1217,7 +1264,7 @@ onUnmounted(() => {
       </label>
 
       <div class="hint">
-        <span v-if="surface !== 'plugins'" class="hint-text">
+        <span v-if="surface === 'panel' || surface === 'hud'" class="hint-text">
           拖动卡片移动 · 拖右下角改尺寸 · 改动即时生效
         </span>
       </div>
@@ -1262,7 +1309,7 @@ onUnmounted(() => {
       <span class="hint-inline">在桌面上直接拖动 HUD 也会记住位置</span>
     </div>
 
-    <div v-if="surface !== 'plugins'" class="body">
+    <div v-if="surface === 'panel' || surface === 'hud'" class="body">
       <aside class="list">
         <div class="list-head">
           <span>卡片</span>
@@ -1379,6 +1426,15 @@ onUnmounted(() => {
         <div v-if="notice" class="notice">{{ notice }}</div>
         <template v-if="selected">
           <div class="insp-title">卡片属性</div>
+
+          <label class="field">
+            <span>设备</span>
+            <Dropdown
+              :model-value="selectedDevice"
+              :options="deviceOptions"
+              @update:model-value="setDevice"
+            />
+          </label>
 
           <label class="field">
             <span>指标</span>
@@ -1506,9 +1562,9 @@ onUnmounted(() => {
       </aside>
     </div>
 
-    <div v-else class="plugins">
+    <div v-else-if="surface === 'devices'" class="devices-page">
       <div class="plug-head">
-        <div class="plug-title">设备</div>
+        <div class="plug-title">已发现的设备</div>
         <div class="plug-actions">
           <button class="btn small" :disabled="devicesLoading" @click="refreshDevices(true)">
             {{ devicesLoading ? "扫描中…" : "重新扫描" }}
@@ -1516,15 +1572,18 @@ onUnmounted(() => {
         </div>
       </div>
       <p class="dev-hint">
-        只有「已绑定」的设备才会产生电量指标，可以同时绑定多个。无线设备休眠时列表里会暂时消失，按一下设备再点「重新扫描」。
+        设备只负责「提供数据」；指标要绑定到某台设备才会出现在卡片里。
+        隐藏一台设备后，它的指标会从指标列表里消失（已有卡片保留，显示 --
+        ）。无线设备休眠时列表里会暂时消失，按一下设备再点「重新扫描」。
       </p>
       <div class="dev-list">
-        <div v-for="d in devices" :key="d.key" class="dev-row">
+        <div v-for="d in devices" :key="d.key" class="dev-row" :class="{ off: d.hidden }">
           <span class="dev-name">{{ d.name }}</span>
           <span class="dev-src">{{ d.source }}</span>
           <span class="dev-level">{{ d.level }}%{{ d.charging ? " · 充电中" : "" }}</span>
-          <button class="btn small" :class="{ bound: d.bound }" @click="toggleBinding(d)">
-            {{ d.bound ? "已绑定" : "绑定" }}
+          <span class="dev-metrics">{{ (d.metrics || []).length }} 个指标</span>
+          <button class="btn small" :class="{ hidden: d.hidden }" @click="toggleHidden(d)">
+            {{ d.hidden ? "已隐藏" : "显示中" }}
           </button>
         </div>
         <div v-if="!devices.length && !devicesLoading" class="empty">
@@ -1533,7 +1592,9 @@ onUnmounted(() => {
         <div v-else-if="devicesLoading && !devices.length" class="empty">正在扫描设备…</div>
       </div>
       <div v-if="devicesError" class="empty">{{ devicesError }}</div>
+    </div>
 
+    <div v-else class="plugins">
       <div class="plug-head" style="margin-top: 22px">
         <div class="plug-title">插件</div>
         <div class="plug-actions">
@@ -2242,13 +2303,30 @@ onUnmounted(() => {
 
 .dev-row {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) 68px 96px 78px;
+  grid-template-columns: minmax(110px, 1fr) 60px 92px 56px 72px;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid rgba(255, 255, 255, 0.07);
   background: rgba(255, 255, 255, 0.03);
+}
+
+.dev-row.off {
+  opacity: 0.55;
+}
+
+.dev-metrics {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.dev-row.off .dev-name {
+  text-decoration: line-through;
+}
+
+.btn.small.hidden {
+  color: var(--text-dim);
 }
 
 .dev-name {

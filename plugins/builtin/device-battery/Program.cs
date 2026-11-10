@@ -83,6 +83,15 @@ internal static class Program
             return;
         }
 
+        if (args.Contains("--devices"))
+        {
+            using var svc = new Collector(false);
+            svc.Initialize();
+            var list = svc.Devices(false);
+            Console.WriteLine(System.Text.Json.JsonSerializer.Serialize(list, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
+
         if (args.Contains("--metrics"))
         {
             using var svc = new Collector(false);
@@ -245,33 +254,26 @@ internal sealed class Collector : IDisposable
     /// 由主循环注入：设备集合变化时重报指标
     public Action<List<MetricDef>>? MetricsChanged { get; set; }
 
-    /// <summary>已绑定的设备键；null = 还没配置过（按「全部绑定」处理，兼容旧配置）</summary>
-    private HashSet<string>? _bindings;
+    /// <summary>被隐藏的设备键（隐藏后不再产生指标）</summary>
+    private HashSet<string> _hidden = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>是否已绑定该设备</summary>
-    public bool IsBound(string key) => _bindings is null || _bindings.Contains(key);
+    /// <summary>该设备是否参与出指标</summary>
+    public bool IsVisible(string key) => !_hidden.Contains(key);
 
-    /// <summary>应用配置：{"bindings": [键...]}；给了空数组表示一个都不绑</summary>
+    /// <summary>应用配置：{"hidden": [键...]}</summary>
     public void ApplyConfig(System.Text.Json.Nodes.JsonNode? cfg)
     {
-        var node = cfg?["bindings"];
-        if (node is not System.Text.Json.Nodes.JsonArray arr)
-        {
-            lock (_gate) _bindings = null;
-        }
-        else
-        {
-            var keys = arr
-                .Select(n => n?.GetValue<string>())
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .Select(s => s!)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            lock (_gate) _bindings = keys;
-        }
+        var node = cfg?["hidden"];
+        var keys = (node as System.Text.Json.Nodes.JsonArray)?
+            .Select(n => n?.GetValue<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Select(s => s!)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase) ?? new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        lock (_gate) _hidden = keys;
 
         List<MetricDef> metrics;
         lock (_gate) metrics = BuildMetrics();
-        Program.Log("info", $"绑定更新：{(_bindings is null ? "全部（未配置）" : _bindings.Count + " 个")}");
+        Program.Log("info", $"隐藏设备 {keys.Count} 个");
         MetricsChanged?.Invoke(metrics);
     }
 
@@ -302,7 +304,13 @@ internal sealed class Collector : IDisposable
                     source = d.Source,
                     level = d.Level,
                     charging = d.Charging,
-                    bound = IsBound(d.Key),
+                    hidden = !IsVisible(d.Key),
+                    // 这台设备能出哪些指标（设置页「设备 → 指标」两级选择用）
+                    metrics = new object[]
+                    {
+                        new { id = $"battery.{d.Key}.level", title = "电量", kind = "ratio" },
+                        new { id = $"battery.{d.Key}.state", title = "状态", kind = "state" },
+                    },
                 })
                 .ToList();
         }
@@ -396,7 +404,7 @@ internal sealed class Collector : IDisposable
             new("battery.devices", "设备电量", "list", null, IntervalMs, false, null, null),
             new("battery.status", "电量状态", "state", null, IntervalMs, false, null, null),
         };
-        foreach (var d in _devices.Values.Where(d => IsBound(d.Key)).OrderBy(d => d.Name, StringComparer.CurrentCulture))
+        foreach (var d in _devices.Values.Where(d => IsVisible(d.Key)).OrderBy(d => d.Name, StringComparer.CurrentCulture))
         {
             list.Add(new MetricDef($"battery.{d.Key}.level", $"{d.Name} 电量", "ratio", "%", IntervalMs, true, 0, 1));
             list.Add(new MetricDef($"battery.{d.Key}.state", $"{d.Name} 状态", "state", null, IntervalMs, false, null, null));
@@ -418,17 +426,17 @@ internal sealed class Collector : IDisposable
                 if (id == "battery.devices")
                 {
                     result[id] = snapshot
-                        .Where(d => IsBound(d.Key))
+                        .Where(d => IsVisible(d.Key))
                         .OrderBy(d => d.Name, StringComparer.CurrentCulture)
                         .Select(d => new ListRow(d.Name, d.Level + "%", d.Level / 100.0))
                         .ToArray();
                 }
                 else if (id == "battery.status")
                 {
-                    var bound = snapshot.Count(d => IsBound(d.Key));
-                    result[id] = bound == 0
-                        ? "没有已绑定的设备"
-                        : bound + " 个设备在线";
+                    var visible = snapshot.Count(d => IsVisible(d.Key));
+                    result[id] = visible == 0
+                        ? "没有可用设备"
+                        : visible + " 个设备在线";
                 }
                 else
                 {
