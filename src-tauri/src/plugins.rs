@@ -230,7 +230,9 @@ impl PluginManager {
 
     pub fn load_config(&self, id: &str) -> Option<Value> {
         let raw = std::fs::read_to_string(self.config_path(id)).ok()?;
-        serde_json::from_str(&raw).ok()
+        // 记事本/PowerShell 保存的 UTF-8 会带 BOM，serde_json 会解析失败
+        let text = raw.trim_start_matches('\u{feff}');
+        serde_json::from_str(text).ok()
     }
 
     pub fn get_config(&self, id: &str) -> Value {
