@@ -24,8 +24,6 @@ export const THEMES: ThemeDef[] = [
       "--text-strong": "#d6d6de",
       "--card-bg": "rgb(18, 18, 22)",
       "--card-border": "rgba(255, 255, 255, 0.08)",
-      "--card-shadow":
-        "0 18px 40px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
       "--track": "rgba(255, 255, 255, 0.08)",
     },
   },
@@ -45,8 +43,6 @@ export const THEMES: ThemeDef[] = [
       "--text-strong": "#cfd9f7",
       "--card-bg": "rgb(12, 18, 42)",
       "--card-border": "rgba(120, 160, 255, 0.14)",
-      "--card-shadow":
-        "0 18px 40px rgba(2, 8, 30, 0.5), inset 0 1px 0 rgba(150, 190, 255, 0.08)",
       "--track": "rgba(140, 170, 255, 0.12)",
     },
   },
@@ -66,8 +62,6 @@ export const THEMES: ThemeDef[] = [
       "--text-strong": "#d9d0f0",
       "--card-bg": "rgb(24, 18, 36)",
       "--card-border": "rgba(181, 140, 255, 0.18)",
-      "--card-shadow":
-        "0 18px 40px rgba(10, 4, 24, 0.5), inset 0 1px 0 rgba(200, 170, 255, 0.08)",
       "--track": "rgba(181, 140, 255, 0.14)",
     },
   },
@@ -87,8 +81,6 @@ export const THEMES: ThemeDef[] = [
       "--text-strong": "#2b313b",
       "--card-bg": "rgb(248, 250, 252)",
       "--card-border": "rgba(15, 23, 42, 0.10)",
-      "--card-shadow":
-        "0 18px 40px rgba(15, 23, 42, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.7)",
       "--track": "rgba(15, 23, 42, 0.10)",
     },
   },

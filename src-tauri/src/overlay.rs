@@ -102,7 +102,7 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
         win.set_ignore_cursor_events(true)?;
         if let Ok(raw) = win.hwnd() {
             unsafe {
-                let _ = SetWindowSubclass(HWND(raw.0 as *mut c_void), Some(keep_alive_proc), 0x1002, 0);
+                let _ = SetWindowSubclass(HWND(raw.0), Some(keep_alive_proc), 0x1002, 0);
             }
         }
     }
@@ -127,7 +127,7 @@ pub fn set_edit_mode(app: &AppHandle, on: bool) -> tauri::Result<()> {
         let _ = win.set_always_on_top(on);
 
         if let Ok(raw) = win.hwnd() {
-            let h = HWND(raw.0 as *mut c_void);
+            let h = HWND(raw.0);
             unsafe {
                 if on {
                     let _ = SetWindowSubclass(h, Some(hit_test_proc), 0x1001, 0);
@@ -208,7 +208,7 @@ fn start_hit_refresh(app: AppHandle) {
 
             // 编辑期间窗口若被系统藏起来，补一次显示
             if let Ok(raw) = win.hwnd() {
-                let h = HWND(raw.0 as *mut c_void);
+                let h = HWND(raw.0);
                 if !unsafe { IsWindowVisible(h) }.as_bool() {
                     unsafe {
                         let _ = ShowWindow(h, SW_SHOWNOACTIVATE);

@@ -235,9 +235,6 @@ impl PluginManager {
         serde_json::from_str(text).ok()
     }
 
-    pub fn get_config(&self, id: &str) -> Value {
-        self.load_config(id).unwrap_or(Value::Null)
-    }
 
     /// 写配置：推给运行中的插件 + 落盘，下次启动自动重放
     pub fn set_config(&self, id: &str, config: Value) -> Result<(), String> {
@@ -603,15 +600,10 @@ impl PluginManager {
             if watcher.watch(&dir, notify::RecursiveMode::NonRecursive).is_err() {
                 return;
             }
-            loop {
-                match rx.recv() {
-                    Ok(_) => {
-                        // 去抖：等目录写入稳定
-                        while rx.recv_timeout(Duration::from_millis(400)).is_ok() {}
-                        manager.rescan();
-                    }
-                    Err(_) => break,
-                }
+            while rx.recv().is_ok() {
+                // 去抖：等目录写入稳定
+                while rx.recv_timeout(Duration::from_millis(400)).is_ok() {}
+                manager.rescan();
             }
             let _ = watcher;
         });

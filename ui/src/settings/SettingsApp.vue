@@ -242,27 +242,6 @@ function staticBlocks(movingId: string): Rect[] {
   return out;
 }
 
-/** 排除指定卡片后的静态块（融合时检查合并后的块会不会压到别人） */
-function blocksExcluding(ids: Set<string>): Rect[] {
-  const cards = config.value?.cards ?? [];
-  const groups = new Map<string, CardConfig[]>();
-  for (const c of cards) {
-    if (!c.group) continue;
-    const arr = groups.get(c.group) ?? [];
-    arr.push(c);
-    groups.set(c.group, arr);
-  }
-  const out: Rect[] = [];
-  for (const [, members] of groups) {
-    const rest = members.filter((m) => !ids.has(m.id));
-    if (rest.length) out.push(unionRects(rest.map(cardRect)));
-  }
-  for (const c of cards) {
-    if (!c.group && !ids.has(c.id)) out.push(cardRect(c));
-  }
-  return out;
-}
-
 /** 卡片在候选几何下所占的块（融合卡片取整组并集） */
 function candidateBlock(card: CardConfig, override: Partial<Rect>): Rect {
   const r = { ...cardRect(card), ...override };

@@ -29,7 +29,6 @@ pub fn dev_enabled() -> bool {
     cfg!(debug_assertions) || std::env::var("DM_DEV").ok().as_deref() == Some("1")
 }
 
-#[allow(dead_code)]
 pub fn open_dev(app: &AppHandle) -> tauri::Result<()> {
     if let Some(win) = app.get_webview_window("dev") {
         let _ = win.set_focus();

@@ -73,10 +73,6 @@ fn set_plugin_config(
     plugins.0.set_config(&plugin, config)
 }
 
-#[tauri::command]
-fn get_plugin_config(plugins: tauri::State<'_, PluginState>, plugin: String) -> serde_json::Value {
-    plugins.0.get_config(&plugin)
-}
 
 #[tauri::command]
 fn get_diag(app: tauri::AppHandle, state: tauri::State<'_, AppState>) -> serde_json::Value {
@@ -206,7 +202,6 @@ pub fn run() {
             open_plugins_dir,
             get_plugin_devices,
             set_plugin_config,
-            get_plugin_config,
             get_diag,
             resize_hud,
             popup_hud_menu,

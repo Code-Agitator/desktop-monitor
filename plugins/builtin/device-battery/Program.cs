@@ -39,7 +39,6 @@ internal sealed class BatteryDevice
     public required string Key { get; init; }
     public int Level { get; set; }
     public bool Charging { get; set; }
-    public bool Connected { get; set; } = true;
     public string Source { get; set; } = "windows";
 }
 
