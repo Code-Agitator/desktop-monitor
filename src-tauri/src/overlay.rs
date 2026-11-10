@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongPtrW, IsIconic,
     IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, GW_HWNDNEXT,
     HWND_BOTTOM, HWND_TOPMOST, HWND_TOP, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SIZE_MINIMIZED, WM_NCHITTEST, WM_SHOWWINDOW,
+    SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE, SIZE_MINIMIZED, WM_NCHITTEST, WM_SHOWWINDOW,
     WM_SIZE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
@@ -27,12 +27,29 @@ const HTTRANSPARENT: i32 = -1;
 static EDITING: AtomicBool = AtomicBool::new(false);
 /// 拖动过程中即使光标离开卡片也要保持可交互
 static DRAG_HOLD: AtomicBool = AtomicBool::new(false);
+/// 面板是否被用户手动隐藏（托盘/HUD 菜单的「显示/隐藏面板」）
+static HIDDEN: AtomicBool = AtomicBool::new(false);
 /// 编辑模式下的卡片矩形（CSS 像素）与缩放，供 WM_NCHITTEST 判断
 static HIT_CELLS: Mutex<Vec<(f64, f64, f64, f64)>> = Mutex::new(Vec::new());
 static HIT_SCALE: Mutex<f64> = Mutex::new(1.0);
 
 pub fn is_editing() -> bool {
     EDITING.load(Ordering::Relaxed)
+}
+
+/// 托盘 / HUD 菜单里的「显示/隐藏面板」：隐藏就真的藏起来，再点恢复
+pub fn toggle_hidden(app: &AppHandle) {
+    let hide = !HIDDEN.load(Ordering::Relaxed);
+    HIDDEN.store(hide, Ordering::Relaxed);
+    unsafe {
+        let Some(h) = hwnd(app) else { return };
+        if hide {
+            let _ = ShowWindow(h, SW_HIDE);
+        }
+    }
+    if !hide {
+        reshow(app);
+    }
 }
 
 pub fn set_drag_hold(hold: bool) {
@@ -78,6 +95,7 @@ unsafe extern "system" fn keep_alive_proc(
     _data: usize,
 ) -> LRESULT {
     if !is_editing()
+        && !HIDDEN.load(Ordering::Relaxed)
         && ((msg == WM_SIZE && wparam.0 == SIZE_MINIMIZED as usize)
             || (msg == WM_SHOWWINDOW && wparam.0 == 0))
     {
@@ -120,6 +138,10 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 /// 切换编辑模式：开启时面板变成可交互的置顶窗口，退出时恢复置底 + 点击穿透
 pub fn set_edit_mode(app: &AppHandle, on: bool) -> tauri::Result<()> {
     EDITING.store(on, Ordering::Relaxed);
+    if on {
+        // 编辑模式必须看得见面板，顺手把「手动隐藏」解除
+        HIDDEN.store(false, Ordering::Relaxed);
+    }
     DRAG_HOLD.store(false, Ordering::Relaxed);
 
     if let Some(win) = app.get_webview_window("panel") {
@@ -293,8 +315,8 @@ pub fn reshow(app: &AppHandle) {
 }
 
 fn keep_bottom(app: &AppHandle) {
-    // 编辑模式下窗口是置顶可交互的，别再往下压
-    if is_editing() {
+    // 编辑模式下窗口是置顶可交互的，别再往下压；用户手动隐藏时也不要复活
+    if is_editing() || HIDDEN.load(Ordering::Relaxed) {
         return;
     }
     unsafe {

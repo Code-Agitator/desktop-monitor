@@ -26,7 +26,7 @@ fn tray_image() -> tauri::image::Image<'static> {
 
 /// 托盘菜单和 HUD 右键菜单共用同一套菜单项
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
-    let show = MenuItem::with_id(app, "show", "显示面板", true, None::<&str>)?;
+    let show = MenuItem::with_id(app, "show", "显示/隐藏面板", true, None::<&str>)?;
     let hud = MenuItem::with_id(app, "hud", "显示/隐藏 HUD", true, None::<&str>)?;
     let settings = MenuItem::with_id(app, "settings", "设置…", true, None::<&str>)?;
     let reload = MenuItem::with_id(app, "reload", "重新加载插件", true, None::<&str>)?;
@@ -43,7 +43,7 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
 fn dispatch(app: &AppHandle, id: &str) {
     match id {
         "quit" => app.exit(0),
-        "show" => crate::overlay::reshow(app),
+        "show" => crate::overlay::toggle_hidden(app),
         "hud" => crate::hud::toggle(app),
         "taskbar" => crate::taskbar::toggle(app),
         "edit" => {
