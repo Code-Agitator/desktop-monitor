@@ -16,6 +16,7 @@ build/
 docs/app-stderr-*.txt
 docs/app-stdout-*.txt
 docs/_*
+tools/.logs/
 .hud-launch-*.txt
 *.pdb
 

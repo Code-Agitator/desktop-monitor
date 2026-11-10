@@ -32,11 +32,13 @@ $built = Join-Path $root "src-tauri\target\$profileName\desktop-monitor.exe"
 if (-not (Test-Path $built)) { exit 1 }
 
 Copy-Item $built "C:\Program Files\desktop-monitor\desktop-monitor.exe" -Force
-$err = Join-Path $root "docs\app-stderr-$Tag.txt"
+$logDir = Join-Path $root "tools\.logs"
+New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+$err = Join-Path $logDir "app-stderr-$Tag.txt"
 Remove-Item $err -ErrorAction SilentlyContinue
 $p = Start-Process -FilePath "C:\Program Files\desktop-monitor\desktop-monitor.exe" `
   -WorkingDirectory "C:\Program Files\desktop-monitor" -PassThru `
-  -RedirectStandardError $err -RedirectStandardOutput (Join-Path $root "docs\app-stdout-$Tag.txt")
+  -RedirectStandardError $err -RedirectStandardOutput (Join-Path $logDir "app-stdout-$Tag.txt")
 Start-Sleep -Seconds 8
 "   alive=$(-not $p.HasExited)"
 "--- stderr 里的错误 ---"
@@ -44,5 +46,5 @@ Get-Content $err -ErrorAction SilentlyContinue | Select-String -Pattern "失败|
 
 if (-not $NoProbe) {
   $env:PYTHONIOENCODING = "utf-8"
-  & $py (Join-Path $root "tools\scripts\hud_probe.py") --out (Join-Path $root "docs\hud-probe-$Tag.png")
+  & $py (Join-Path $root "tools/scripts/hud_probe.py") --out (Join-Path $logDir "hud-probe-$Tag.png")
 }
