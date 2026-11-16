@@ -24,10 +24,13 @@ static CURRENT_LABEL: Mutex<String> = Mutex::new(String::new());
 
 pub fn setup(app: &AppHandle, shared: Arc<Mutex<TaskbarConfig>>) -> tauri::Result<()> {
     let cfg = shared.lock().unwrap().clone();
-    let win = create_window(app, &cfg, BASE_LABEL)?;
-    *CURRENT_LABEL.lock().unwrap() = BASE_LABEL.to_string();
-    // 在第一帧之前就挂到任务栏下，避免先闪一下再跳进去
-    attach(&win, cfg.width);
+    // 只在启用时建窗口：关闭时直接销毁，省下一个 renderer 进程
+    if cfg.enabled {
+        let win = create_window(app, &cfg, BASE_LABEL)?;
+        *CURRENT_LABEL.lock().unwrap() = BASE_LABEL.to_string();
+        // 在第一帧之前就挂到任务栏下，避免先闪一下再跳进去
+        attach(&win, cfg.width);
+    }
 
     let app = app.clone();
     std::thread::spawn(move || {
@@ -35,9 +38,28 @@ pub fn setup(app: &AppHandle, shared: Arc<Mutex<TaskbarConfig>>) -> tauri::Resul
             std::thread::sleep(Duration::from_millis(500));
             let cfg = shared.lock().unwrap().clone();
             if !cfg.enabled {
+                // 销毁而不是隐藏：隐藏的 webview 仍然占着一个 renderer 进程
                 let label = CURRENT_LABEL.lock().unwrap().clone();
-                if let Some(win) = app.get_webview_window(&label) {
-                    hide(&win);
+                if !label.is_empty() {
+                    if let Some(win) = app.get_webview_window(&label) {
+                        let _ = win.destroy();
+                    }
+                    *CURRENT_LABEL.lock().unwrap() = String::new();
+                    eprintln!("[taskbar] 已销毁窗口（释放 renderer）");
+                }
+                continue;
+            }
+
+            // 刚启用：还没有窗口，建一个挂上去
+            if CURRENT_LABEL.lock().unwrap().is_empty() {
+                let next = next_label();
+                match create_window(&app, &cfg, &next) {
+                    Ok(win) => {
+                        *CURRENT_LABEL.lock().unwrap() = next.clone();
+                        attach(&win, cfg.width);
+                        eprintln!("[taskbar] 已创建窗口 {next}");
+                    }
+                    Err(e) => eprintln!("[taskbar] 创建窗口失败：{e}"),
                 }
                 continue;
             }
@@ -54,10 +76,7 @@ pub fn setup(app: &AppHandle, shared: Arc<Mutex<TaskbarConfig>>) -> tauri::Resul
                 .map(|h| unsafe { IsWindow(Some(h)).as_bool() })
                 .unwrap_or(false);
             if !alive {
-                let next = format!("{}-{}", BASE_LABEL, std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_millis())
-                    .unwrap_or(0));
+                let next = next_label();
                 match create_window(&app, &cfg, &next) {
                     Ok(win) => {
                         *CURRENT_LABEL.lock().unwrap() = next.clone();
@@ -83,6 +102,18 @@ pub fn setup(app: &AppHandle, shared: Arc<Mutex<TaskbarConfig>>) -> tauri::Resul
         }
     });
     Ok(())
+}
+
+/// 每次重建都换新 label：旧窗口被销毁后同名 label 会被 Tauri 认为是同一个窗口
+fn next_label() -> String {
+    format!(
+        "{}-{}",
+        BASE_LABEL,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    )
 }
 
 fn create_window(

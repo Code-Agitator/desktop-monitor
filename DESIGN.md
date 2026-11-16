@@ -415,6 +415,12 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **内存优化第一档：关掉的窗口不再占内存（2026-11-16）**：HUD / 任务栏条原来关闭时只是 `SW_HIDE`，webview 和它的 renderer 进程都还在（每个 ~80 MB WS / ~32 MB 私有）。
+    - 改成**关闭即销毁**：HUD 监管线程发现 `enabled=false` 就 `destroy()`，重新开启时回主线程重建（约 0.3 s）；任务栏条同理，并且每次都换新 label（`taskbar-<ms>`）再挂回 `Shell_TrayWnd`。
+    - 实测（13 进程那套）：两者都开 709–724 MB WS / 346–393 MB 私有 → 都关 551 MB WS / 295 MB 私有，**-158 MB WS / -65 MB 私有**，进程 13 → 11、renderer 3 → 1。运行时逐个关闭也能立刻回收（13→12 进程、3→2 renderer，约 1 s 内），重新开启会重建窗口。
+    - 顺手：`foreground_fullscreen` 判自身窗口时把 `taskbar` 前缀的动态 label 也算进去，避免任务栏条被误判成"全屏应用"。
+    - 试过但**放弃**：给插件设 `DOTNET_GCHeapHardLimit=64MB` + `DOTNET_TieredPGO=0`，A/B 实测插件私有内存 33.9 → 31.0 MB（-2.9 MB），收益太小且硬上限有 OOM 崩溃风险，不引入。
+
   - **打包安装程序（2026-11-16）**：`pnpm tauri build` 走 NSIS，产出 `desktop-monitor_0.1.0_x64-setup.exe`（12.4 MB）。
     - 图标：`tools/make_icon.py` 画 1024px 源图（深色圆角底 + 青色环 + 三根柱），再 `tauri icon` 生成全套（ico/png/Store 尺寸）。
     - 内置插件随安装包走：`tools/scripts/prepare_bundle.ps1` 把 `build/*` 的 exe + `manifest.json` 铺到 `src-tauri/resources/plugins/`，`bundle.resources` 带上；运行时 `plugins::install_bundled()` 从 `resource_dir()/resources/plugins` 复制到用户插件目录（缺失或版本不同才覆盖）。实测：清空插件目录后启动，两个插件自动铺好。
