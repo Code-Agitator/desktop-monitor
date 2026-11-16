@@ -13,7 +13,8 @@ param(
 # no BOM, and non-ASCII comments can break parsing.
 $ErrorActionPreference = "Continue"
 
-$root = "D:\Work\desktop-monitor"
+# Repo root = two levels up from tools/scripts (works locally and on CI).
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $node = "C:\Users\14820\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
 $py = "C:\Users\14820\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe"
 $profileName = if ($Debug) { "debug" } else { "release" }

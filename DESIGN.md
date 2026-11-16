@@ -420,6 +420,10 @@ one）。
     - 内置插件随安装包走：`tools/scripts/prepare_bundle.ps1` 把 `build/*` 的 exe + `manifest.json` 铺到 `src-tauri/resources/plugins/`，`bundle.resources` 带上；运行时 `plugins::install_bundled()` 从 `resource_dir()/resources/plugins` 复制到用户插件目录（缺失或版本不同才覆盖）。实测：清空插件目录后启动，两个插件自动铺好。
     - 安装器：`perMachine`（装到 `C:\Program Files\desktop-monitor`，与开发期的目录一致）、简体中文/英文、无语言选择页。
     - 一键出包：`tools/scripts/make_installer.ps1`（stage → tauri build → 打印路径/大小/SHA256）。
+    - CI：`.github/workflows/release.yml`（手动 `workflow_dispatch`，windows-latest）。版本号只认 `package.json`，构建前用 `tools/scripts/set-version.mjs` 同步到 `tauri.conf.json` / `Cargo.toml` / `ui/package.json`；tag 已存在会直接失败，避免覆盖已发布版本。产物：GitHub Release（安装包 + `.sha256`）+ Actions artifact。
+    - CI 细节：`pnpm/action-setup` 用 10（和本地一致），`--frozen-lockfile` 两份锁都要过；`ui/package.json` 补了 `pnpm.onlyBuiltDependencies: ["esbuild"]`，否则 pnpm 10 默认拦 postinstall，CI 上 esbuild 二进制装不上。脚本里的仓库根目录改成从 `$PSScriptRoot` 推，别再硬编码 `D:\Work\desktop-monitor`。
+
+
     - 坑：`.ps1` 里 `$ErrorActionPreference = "Stop"` 时，CLI 往 stderr 打的进度行会被 PowerShell 当成错误直接终止，构建脚本要用 `Continue` 并自己检查 `$LASTEXITCODE`。
 
   - **托盘「显示面板」改成真正的开关（2026-11-11）**：原来这一项调的是 `overlay::reshow()`——把面板窗口强制显示 + 恢复到全屏 + 重新插到 Progman 之上。问题是面板本来就一直显示，`keep_bottom` 每 120ms 还会再兜一次底，所以它平时是个空操作，只有窗口被意外改过尺寸时才看得出效果，名字却像"显示/隐藏"。

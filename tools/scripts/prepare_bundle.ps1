@@ -5,7 +5,8 @@ param(
 # Stage the built-in plugins into src-tauri/resources so the installer ships them.
 # Keep this file ASCII-only (Windows PowerShell reads .ps1 as ANSI without a BOM).
 $ErrorActionPreference = "Stop"
-$root = "D:\Work\desktop-monitor"
+# Repo root = two levels up from tools/scripts (works locally and on CI).
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $res = Join-Path $root "src-tauri\resources\plugins"
 
 function Publish-Plugin($name, $exe, $proj) {

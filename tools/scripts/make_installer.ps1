@@ -7,7 +7,8 @@ param(
 # $ErrorActionPreference stays "Continue": the CLI writes progress to stderr and
 # PowerShell would otherwise treat those lines as terminating errors.
 $ErrorActionPreference = "Continue"
-$root = "D:\Work\desktop-monitor"
+# Repo root = two levels up from tools/scripts (works locally and on CI).
+$root = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $node = "C:\Users\14820\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
 
 if (-not $SkipPlugins) {
