@@ -415,6 +415,16 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **更新走系统代理 / 手动代理（2026-11-16）**：检查更新和下载安装包都要能过代理。
+    - tauri-plugin-updater 默认启用了 `system-proxy` 特性（→ `reqwest/system-proxy` → `hyper-util/client-proxy-system`），会自动读 Windows 的系统代理设置；`check()` 的 JS/Rust 接口另支持手动 `proxy`。
+    - 新增 `prefs.json` 的 `proxy` 字段（空 = 跟随系统）：Rust 侧 `build_updater()` 用 `UpdaterBuilder::proxy(url)`，前端 `check({proxy})` / `download(cb, {proxy})` 也传同一个值；设置页更新区块加了「代理」输入框。
+    - 实测（stderr 里看后台检查结果，直连当时是通的）：
+      A 手动代理=死端口 `127.0.0.1:9` → 检查失败（证明走了手动代理）
+      B 手动代理=真实 `127.0.0.1:10809` → 检查成功
+      C 手动为空 + 系统代理=死端口 → 检查失败（证明跟随系统代理）
+      D 手动为空 + 系统代理=真实 → 检查成功
+    - 结论：系统代理本来就是跟着走的（之前报错是因为当时系统代理是关的、而直连又被墙）。
+
   - **低显存模式（2026-11-16，核显机器优化）**：WebView2 的 GPU 进程在核显机器上占的是系统内存，实测关掉后收益很大。
     - 实测（面板 + HUD + 任务栏都在、13 进程）：GPU 进程私有 **131 MB → 28 MB**，显存 **95 MB → 0**（连共享显存也归零），整树私有 **358 MB → 257 MB**，CPU 5.0% → 5.6%（噪声级）。
     - 参数：`--disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --js-flags=--max-old-space-size=64`。

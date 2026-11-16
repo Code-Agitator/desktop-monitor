@@ -7,6 +7,7 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
 
 /// Tauri 默认会带上的参数（我们显式传入以保持所有窗口一致）
@@ -17,6 +18,8 @@ const BASE_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenPro
 const LOW_MEM_ARGS: &str = "--disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --js-flags=--max-old-space-size=64";
 
 static LOW_MEM: AtomicBool = AtomicBool::new(false);
+/// 手动代理（空 = 跟随系统代理）。形如 http://127.0.0.1:10809
+static PROXY: Mutex<String> = Mutex::new(String::new());
 
 fn path(app: &AppHandle) -> PathBuf {
     app.path()
@@ -26,13 +29,32 @@ fn path(app: &AppHandle) -> PathBuf {
 }
 
 pub fn load(app: &AppHandle) -> bool {
-    let on = std::fs::read_to_string(path(app))
-        .ok()
-        .and_then(|t| serde_json::from_str::<serde_json::Value>(t.trim_start_matches('\u{feff}')).ok())
-        .and_then(|v| v.get("lowGpuMemory").and_then(|b| b.as_bool()))
+    let raw = std::fs::read_to_string(path(app)).unwrap_or_default();
+    let value: serde_json::Value =
+        serde_json::from_str(raw.trim_start_matches('\u{feff}')).unwrap_or(serde_json::Value::Null);
+    let on = value
+        .get("lowGpuMemory")
+        .and_then(|b| b.as_bool())
         .unwrap_or(false);
+    let proxy = value
+        .get("proxy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .trim()
+        .to_string();
     LOW_MEM.store(on, Ordering::Relaxed);
+    *PROXY.lock().unwrap() = proxy;
     on
+}
+
+/// 手动代理地址（空 = 跟随系统）
+pub fn proxy() -> String {
+    PROXY.lock().unwrap().clone()
+}
+
+pub fn set_proxy(app: &AppHandle, value: &str) {
+    *PROXY.lock().unwrap() = value.trim().to_string();
+    save(app, low_mem());
 }
 
 pub fn low_mem() -> bool {
@@ -47,8 +69,10 @@ pub fn save(app: &AppHandle, low: bool) {
     }
     match std::fs::File::create(&p) {
         Ok(mut f) => {
+            let proxy = PROXY.lock().unwrap().clone();
+            let body = serde_json::json!({ "lowGpuMemory": low, "proxy": proxy });
             let _ = f.write_all(
-                format!("{{\n  \"lowGpuMemory\": {low}\n}}\n").as_bytes(),
+                format!("{}\n", serde_json::to_string_pretty(&body).unwrap_or_default()).as_bytes(),
             );
         }
         Err(e) => eprintln!("[prefs] 写入失败：{e}"),

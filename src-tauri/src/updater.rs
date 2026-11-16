@@ -22,9 +22,21 @@ pub struct UpdateInfo {
 
 static INFO: Mutex<Option<UpdateInfo>> = Mutex::new(None);
 
+/// 按偏好构建 updater：手动代理优先，否则交给插件的 system-proxy 特性（跟随系统设置）
+fn build_updater(app: &AppHandle) -> Result<tauri_plugin_updater::Updater, String> {
+    let mut builder = app.updater_builder();
+    let proxy = crate::prefs::proxy();
+    if !proxy.is_empty() {
+        let url: url::Url =
+            proxy.parse().map_err(|e| format!("代理地址无效（{proxy}）：{e}"))?;
+        builder = builder.proxy(url);
+    }
+    builder.build().map_err(|e| e.to_string())
+}
+
 /// 查一次；没有新版本返回 Ok(None)
 fn check_once(app: &AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let updater = app.updater().map_err(|e| e.to_string())?;
+    let updater = build_updater(app)?;
     let current = app.package_info().version.to_string();
     let found = tauri::async_runtime::block_on(updater.check()).map_err(|e| e.to_string())?;
     Ok(found.map(|u| UpdateInfo {

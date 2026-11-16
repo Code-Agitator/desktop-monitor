@@ -628,6 +628,27 @@ interface UpdateInfo {
 }
 
 const appVersion = ref("");
+/** 手动代理（空 = 跟随系统代理） */
+const proxyValue = ref("");
+
+async function loadProxy() {
+  try {
+    proxyValue.value = await invoke<string>("get_proxy");
+  } catch {
+    // 非 Tauri 环境
+  }
+}
+
+async function saveProxy() {
+  try {
+    await invoke("set_proxy", { proxy: proxyValue.value });
+    proxyValue.value = (await invoke<string>("get_proxy")) || "";
+    showNotice(proxyValue.value ? `代理已设为 ${proxyValue.value}` : "已改为跟随系统代理");
+  } catch (e) {
+    showNotice("保存代理失败：" + String(e));
+  }
+}
+
 const updateInfo = ref<UpdateInfo | null>(null);
 const updateChecking = ref(false);
 const updateInstalling = ref(false);
@@ -669,7 +690,8 @@ async function downloadUpdate() {
   updateError.value = "";
   updateDownloaded.value = false;
   try {
-    pendingUpdate = await checkUpdater();
+    const proxy = proxyValue.value.trim();
+    pendingUpdate = await checkUpdater(proxy ? { proxy } : undefined);
     if (!pendingUpdate) {
       showNotice("没有可用更新");
       return;
@@ -677,14 +699,17 @@ async function downloadUpdate() {
     let total = 0;
     let got = 0;
     // download 结束时会自动校验签名，校验失败会 throw
-    await pendingUpdate.download((event) => {
-      if (event.event === "Started") {
-        total = event.data.contentLength ?? 0;
-      } else if (event.event === "Progress") {
-        got += event.data.chunkLength;
-        if (total > 0) updateProgress.value = Math.round((got * 100) / total);
-      }
-    });
+    await pendingUpdate.download(
+      (event) => {
+        if (event.event === "Started") {
+          total = event.data.contentLength ?? 0;
+        } else if (event.event === "Progress") {
+          got += event.data.chunkLength;
+          if (total > 0) updateProgress.value = Math.round((got * 100) / total);
+        }
+      },
+      proxy ? { proxy } : undefined,
+    );
     updateDownloaded.value = true;
     updateProgress.value = 100;
     showNotice("更新已下载并校验通过，可以重启安装");
@@ -1322,6 +1347,7 @@ onMounted(async () => {
   // 当前版本 + 后台线程已经检查到的更新
   void loadUpdateState();
   void loadPrefs();
+  void loadProxy();
   // 卡片里的指标要知道属于哪台设备，所以启动就拉一次（插件端有缓存，很快）
   void refreshDevices(false);
   recalc();
@@ -1806,6 +1832,17 @@ onUnmounted(() => {
           </button>
         </div>
       </div>
+      <label class="proxy-row">
+        <span>代理</span>
+        <input
+          type="text"
+          placeholder="留空 = 跟随系统代理，例如 http://127.0.0.1:10809"
+          :value="proxyValue"
+          @input="proxyValue = ($event.target as HTMLInputElement).value"
+          @blur="saveProxy"
+          @keydown.enter="saveProxy"
+        />
+      </label>
 
       <div class="plug-title" style="margin-top: 28px">诊断</div>
       <div class="diag">
@@ -2473,6 +2510,35 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 20px 24px;
   box-sizing: border-box;
+}
+
+.proxy-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.proxy-row span {
+  flex: none;
+  width: 28px;
+}
+
+.proxy-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--text);
+  font-size: 11px;
+}
+
+.proxy-row input::placeholder {
+  color: var(--text-dim);
 }
 
 .perf-row {

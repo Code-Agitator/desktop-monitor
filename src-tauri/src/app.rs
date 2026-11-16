@@ -37,6 +37,16 @@ fn create_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
 }
 
 #[tauri::command]
+fn get_proxy() -> String {
+    crate::prefs::proxy()
+}
+
+#[tauri::command]
+fn set_proxy(app: tauri::AppHandle, proxy: String) {
+    crate::prefs::set_proxy(&app, &proxy);
+}
+
+#[tauri::command]
 fn get_low_mem() -> bool {
     crate::prefs::low_mem()
 }
@@ -253,7 +263,9 @@ pub fn run() {
             crate::updater::update_state,
             crate::updater::app_version,
             get_low_mem,
-            set_low_mem
+            set_low_mem,
+            get_proxy,
+            set_proxy
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
