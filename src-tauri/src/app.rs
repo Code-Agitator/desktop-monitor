@@ -12,7 +12,7 @@ pub struct PluginState(pub Arc<crate::plugins::PluginManager>);
 
 /// 面板窗口改由代码创建：WebView2 的浏览器参数只能在启动时确定，
 /// 而「低显存模式」需要给所有窗口传同一套参数（不同参数会导致第二个窗口 0x8007139F）。
-fn create_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
+pub(crate) fn create_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
     if app.get_webview_window("panel").is_some() {
         return Ok(());
     }

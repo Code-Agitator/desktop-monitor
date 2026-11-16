@@ -17,7 +17,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GetSystemMetrics, GetTopWindow, GetWindow, GetWindowLongPtrW, IsIconic,
     IsWindowVisible, SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, GW_HWNDNEXT,
     HWND_BOTTOM, HWND_TOPMOST, HWND_TOP, SM_CXSCREEN, SM_CYSCREEN, SWP_NOACTIVATE, SWP_NOMOVE,
-    SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE, SIZE_MINIMIZED, WM_NCHITTEST, WM_SHOWWINDOW,
+    SWP_NOSIZE, SWP_SHOWWINDOW, SW_SHOWNOACTIVATE, SIZE_MINIMIZED, WM_NCHITTEST, WM_SHOWWINDOW,
     WM_SIZE, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
 };
 
@@ -37,19 +37,46 @@ pub fn is_editing() -> bool {
     EDITING.load(Ordering::Relaxed)
 }
 
-/// 托盘 / HUD 菜单里的「显示/隐藏面板」：隐藏就真的藏起来，再点恢复
+/// 托盘 / HUD 菜单里的「显示/隐藏面板」：隐藏时**销毁 webview**，把 renderer 进程还给系统；
+/// 再次显示时重建窗口并重新挂上子类/样式（约 0.3s 重载）。
 pub fn toggle_hidden(app: &AppHandle) {
     let hide = !HIDDEN.load(Ordering::Relaxed);
     HIDDEN.store(hide, Ordering::Relaxed);
-    unsafe {
-        let Some(h) = hwnd(app) else { return };
-        if hide {
-            let _ = ShowWindow(h, SW_HIDE);
+    if hide {
+        if let Some(win) = app.get_webview_window("panel") {
+            let _ = win.destroy();
+            eprintln!("[overlay] 面板已销毁（释放 renderer）");
         }
-    }
-    if !hide {
+    } else {
+        ensure_panel(app);
         reshow(app);
     }
+}
+
+/// 面板不在就重建（隐藏时会销毁），并把子类、样式重新挂上去
+pub fn ensure_panel(app: &AppHandle) {
+    if app.get_webview_window("panel").is_some() {
+        return;
+    }
+    if let Err(e) = crate::app::create_panel(app) {
+        eprintln!("[overlay] 重建面板失败：{e}");
+        return;
+    }
+    attach_panel(app);
+    eprintln!("[overlay] 面板已重建");
+}
+
+/// 给面板挂上「最小化/被隐藏时自动恢复」的子类与扩展样式
+fn attach_panel(app: &AppHandle) {
+    if let Some(win) = app.get_webview_window("panel") {
+        let _ = win.set_ignore_cursor_events(!is_editing());
+        if let Ok(raw) = win.hwnd() {
+            unsafe {
+                let _ = SetWindowSubclass(HWND(raw.0), Some(keep_alive_proc), 0x1002, 0);
+            }
+        }
+    }
+    apply_styles(app);
 }
 
 pub fn set_drag_hold(hold: bool) {
@@ -116,15 +143,7 @@ unsafe extern "system" fn keep_alive_proc(
 }
 
 pub fn setup(app: &AppHandle) -> tauri::Result<()> {
-    if let Some(win) = app.get_webview_window("panel") {
-        win.set_ignore_cursor_events(true)?;
-        if let Ok(raw) = win.hwnd() {
-            unsafe {
-                let _ = SetWindowSubclass(HWND(raw.0), Some(keep_alive_proc), 0x1002, 0);
-            }
-        }
-    }
-    apply_styles(app);
+    attach_panel(app);
     reshow(app);
 
     let handle = app.clone();
@@ -139,8 +158,9 @@ pub fn setup(app: &AppHandle) -> tauri::Result<()> {
 pub fn set_edit_mode(app: &AppHandle, on: bool) -> tauri::Result<()> {
     EDITING.store(on, Ordering::Relaxed);
     if on {
-        // 编辑模式必须看得见面板，顺手把「手动隐藏」解除
+        // 编辑模式必须看得见面板：解除隐藏并在需要时重建
         HIDDEN.store(false, Ordering::Relaxed);
+        ensure_panel(app);
     }
     DRAG_HOLD.store(false, Ordering::Relaxed);
 

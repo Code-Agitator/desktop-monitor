@@ -415,6 +415,12 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **面板按需加载（2026-11-16）**：托盘/HUD 菜单的「显示/隐藏面板」以前只是 `SW_HIDE`，webview 和 renderer 进程都还留着；现在隐藏即**销毁窗口**，需要时再重建。
+    - 实测（13 进程那套）：隐藏后 12 进程 / renderer 3 → 2，整树 WS **685 → 623 MB**、私有 **354 → 324 MB**；再次显示会重建窗口（日志 `[overlay] 面板已重建`），卡片照常渲染。
+    - `overlay::ensure_panel()` 负责「不在就建，然后重挂子类/扩展样式」；`toggle_hidden()` 隐藏时 `destroy()`，显示时 `ensure_panel()` + `reshow()`。
+    - 桌面编辑模式会先 `ensure_panel()`（隐藏状态下点「桌面编辑」也能正常出现）。
+    - 面板仍随应用启动创建（它就是桌面常驻组件），「按需」体现在用户主动隐藏之后。
+
   - **更新走系统代理 / 手动代理（2026-11-16）**：检查更新和下载安装包都要能过代理。
     - tauri-plugin-updater 默认启用了 `system-proxy` 特性（→ `reqwest/system-proxy` → `hyper-util/client-proxy-system`），会自动读 Windows 的系统代理设置；`check()` 的 JS/Rust 接口另支持手动 `proxy`。
     - 新增 `prefs.json` 的 `proxy` 字段（空 = 跟随系统）：Rust 侧 `build_updater()` 用 `UpdaterBuilder::proxy(url)`，前端 `check({proxy})` / `download(cb, {proxy})` 也传同一个值；设置页更新区块加了「代理」输入框。
