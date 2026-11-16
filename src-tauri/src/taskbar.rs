@@ -123,6 +123,7 @@ fn create_window(
 ) -> tauri::Result<WebviewWindow> {
     let win = WebviewWindowBuilder::new(app, label, WebviewUrl::App("taskbar.html".into()))
         .title("desktop-monitor taskbar")
+        .additional_browser_args(&crate::prefs::browser_args())
         .inner_size(cfg.width, 32.0)
         .decorations(false)
         .transparent(true)

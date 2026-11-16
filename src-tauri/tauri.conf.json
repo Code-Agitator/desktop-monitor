@@ -10,28 +10,7 @@
     "frontendDist": "../ui/dist"
   },
   "app": {
-    "windows": [
-      {
-        "label": "panel",
-        "title": "desktop-monitor",
-        "url": "index.html",
-        "width": 1280,
-        "height": 720,
-        "x": 0,
-        "y": 0,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": false,
-        "skipTaskbar": true,
-        "resizable": false,
-        "maximizable": false,
-        "minimizable": false,
-        "closable": false,
-        "focus": false,
-        "visible": false,
-        "shadow": false
-      }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }
@@ -63,6 +42,17 @@
           "English"
         ],
         "displayLanguageSelector": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM0OTBFREM5OUI0ODMwQTgKUldTb01FaWJ5ZTJReEFYQ1FTclJpNUdxM1hBS0dCRDUvSVJ1VzZnSG5McG5jYkFxMUR2WVJzc2cK",
+      "endpoints": [
+        "https://github.com/Code-Agitator/desktop-monitor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

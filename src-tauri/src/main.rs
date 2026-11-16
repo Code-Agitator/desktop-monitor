@@ -7,6 +7,7 @@ mod instance;
 mod metrics;
 mod overlay;
 mod plugins;
+mod prefs;
 mod scheduler;
 mod sink;
 mod source;

@@ -12,6 +12,7 @@ pub fn open_settings(app: &AppHandle) -> tauri::Result<()> {
 
     let win = WebviewWindowBuilder::new(app, "settings", WebviewUrl::App("settings.html".into()))
         .title("desktop-monitor 设置")
+        .additional_browser_args(&crate::prefs::browser_args())
         .inner_size(1180.0, 800.0)
         .min_inner_size(920.0, 640.0)
         // 去掉系统标题栏，标题栏改由页面自己画（沉浸式）；shadow 让 Win11 保留圆角与投影，
@@ -36,6 +37,7 @@ pub fn open_dev(app: &AppHandle) -> tauri::Result<()> {
     }
     let win = WebviewWindowBuilder::new(app, "dev", WebviewUrl::App("dev.html".into()))
         .title("desktop-monitor dev")
+        .additional_browser_args(&crate::prefs::browser_args())
         .inner_size(1240.0, 900.0)
         .center()
         .build()?;

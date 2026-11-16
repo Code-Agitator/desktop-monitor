@@ -120,6 +120,7 @@ fn build_window(
 ) -> tauri::Result<WebviewWindow> {
     let win = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("hud.html".into()))
         .title("desktop-monitor HUD")
+        .additional_browser_args(&crate::prefs::browser_args())
         // 下限放宽到 40×24：HUD 单元格可以做到 32 高，窗口跟着内容自适应时不能被这里卡住
         .inner_size(win_cfg.w.max(40.0), win_cfg.h.max(24.0))
         .position(win_cfg.x, win_cfg.y)

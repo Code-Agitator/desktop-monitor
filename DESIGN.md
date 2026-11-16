@@ -415,6 +415,13 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **低显存模式（2026-11-16，核显机器优化）**：WebView2 的 GPU 进程在核显机器上占的是系统内存，实测关掉后收益很大。
+    - 实测（面板 + HUD + 任务栏都在、13 进程）：GPU 进程私有 **131 MB → 28 MB**，显存 **95 MB → 0**（连共享显存也归零），整树私有 **358 MB → 257 MB**，CPU 5.0% → 5.6%（噪声级）。
+    - 参数：`--disable-gpu --disable-gpu-compositing --disable-gpu-rasterization --js-flags=--max-old-space-size=64`。
+    - **关键坑**：WebView2 的浏览器参数只能启动时确定，而且同一应用的所有窗口必须用**完全一样**的参数——只给一个窗口加参数，其它窗口会创建失败（`0x8007139F ERROR_INVALID_STATE`）。所以：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 环境变量无效（Tauri 会显式传自己的默认参数覆盖它），改成 `prefs::browser_args()` 统一传给每个窗口（面板也从 `tauri.conf.json` 搬到代码里创建，否则配置里写死的参数改不了）。
+    - 开关放在设置页「插件与诊断 → 性能」，写入 `prefs.json`（`{"lowGpuMemory":true}`），**重启后生效**，界面提供「立即重启」。
+    - 代价：软件渲染，文字/圆角/阴影略微变糙；设置页滚动不如硬件渲染顺滑。
+
   - **自动更新（2026-11-16）**：接 tauri-plugin-updater，从 GitHub Release 拉 `latest.json` 自更新。
     - 后端 `updater.rs`：启动 20s 后检查一次，之后每 6 小时；发现新版本缓存并广播 `update-available`。命令 `update_check` / `update_state` / `app_version`。
     - 前端：设置页「插件与诊断 → 更新」区块，当前版本 / 新版本 / [检查更新] / [下载更新] / [重启并安装]；下载走 `plugin-updater` 的 `download()`（结束时自动验签），安装走 `install()`（Windows 上会退出应用并拉起 NSIS）。

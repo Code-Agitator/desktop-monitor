@@ -10,6 +10,42 @@ pub struct AppState {
 
 pub struct PluginState(pub Arc<crate::plugins::PluginManager>);
 
+/// 面板窗口改由代码创建：WebView2 的浏览器参数只能在启动时确定，
+/// 而「低显存模式」需要给所有窗口传同一套参数（不同参数会导致第二个窗口 0x8007139F）。
+fn create_panel(app: &tauri::AppHandle) -> tauri::Result<()> {
+    if app.get_webview_window("panel").is_some() {
+        return Ok(());
+    }
+    tauri::WebviewWindowBuilder::new(app, "panel", tauri::WebviewUrl::App("index.html".into()))
+        .title("desktop-monitor")
+        .inner_size(1280.0, 720.0)
+        .position(0.0, 0.0)
+        .decorations(false)
+        .transparent(true)
+        .shadow(false)
+        .always_on_top(false)
+        .skip_taskbar(true)
+        .resizable(false)
+        .maximizable(false)
+        .minimizable(false)
+        .closable(false)
+        .focused(false)
+        .visible(false)
+        .additional_browser_args(&crate::prefs::browser_args())
+        .build()?;
+    Ok(())
+}
+
+#[tauri::command]
+fn get_low_mem() -> bool {
+    crate::prefs::low_mem()
+}
+
+#[tauri::command]
+fn set_low_mem(app: tauri::AppHandle, enabled: bool) {
+    crate::prefs::save(&app, enabled);
+}
+
 #[tauri::command]
 fn save_surface_config(
     app: tauri::AppHandle,
@@ -215,12 +251,18 @@ pub fn run() {
             is_panel_edit,
             crate::updater::update_check,
             crate::updater::update_state,
-            crate::updater::app_version
+            crate::updater::app_version,
+            get_low_mem,
+            set_low_mem
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
             let plugins = crate::plugins::PluginManager::new(handle.clone(), store.clone());
             app.manage(PluginState(plugins.clone()));
+            crate::prefs::load(&handle);
+            if let Err(e) = create_panel(&handle) {
+                eprintln!("面板窗口创建失败：{e}");
+            }
             crate::tray::setup(app)?;
             if crate::windows::dev_enabled() {
                 if let Err(e) = crate::windows::open_dev(&handle) {

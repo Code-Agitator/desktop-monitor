@@ -586,6 +586,38 @@ async function refreshPlugins() {
   } catch {}
 }
 
+/* ---------- 低显存模式 ---------- */
+
+const lowMem = ref(false);
+const prefsDirty = ref(false);
+
+async function loadPrefs() {
+  try {
+    lowMem.value = await invoke<boolean>("get_low_mem");
+  } catch {
+    // 非 Tauri 环境
+  }
+}
+
+async function toggleLowMem(value: boolean) {
+  try {
+    await invoke("set_low_mem", { enabled: value });
+    lowMem.value = value;
+    prefsDirty.value = true;
+    showNotice(value ? "低显存模式已开启，重启后生效" : "低显存模式已关闭，重启后生效");
+  } catch (e) {
+    showNotice("保存失败：" + String(e));
+  }
+}
+
+async function restartApp() {
+  try {
+    await relaunch();
+  } catch (e) {
+    showNotice("重启失败：" + String(e));
+  }
+}
+
 /* ---------- 自动更新 ---------- */
 
 interface UpdateInfo {
@@ -1289,6 +1321,7 @@ onMounted(async () => {
   refreshPlugins();
   // 当前版本 + 后台线程已经检查到的更新
   void loadUpdateState();
+  void loadPrefs();
   // 卡片里的指标要知道属于哪台设备，所以启动就拉一次（插件端有缓存，很快）
   void refreshDevices(false);
   recalc();
@@ -1717,6 +1750,24 @@ onUnmounted(() => {
           插件目录里还没有插件，把插件文件夹复制进去就会自动加载
         </div>
       </div>
+
+      <div class="plug-title" style="margin-top: 28px">性能</div>
+      <label class="perf-row">
+        <input
+          type="checkbox"
+          :checked="lowMem"
+          @change="toggleLowMem(($event.target as HTMLInputElement).checked)"
+        />
+        <div class="perf-text">
+          <div class="perf-title">低显存模式</div>
+          <div class="perf-desc">
+            关闭 WebView2 的 GPU 渲染与合成：GPU 进程私有内存 ~127MB → ~27MB、显存 ~104MB → 0。
+            代价是界面变成软件渲染（文字/动画轻微变糙），CPU 实测基本不变。
+          </div>
+          <div v-if="prefsDirty" class="perf-warn">需要重启应用后生效</div>
+        </div>
+        <button v-if="prefsDirty" class="btn small" @click="restartApp">立即重启</button>
+      </label>
 
       <div class="plug-title" style="margin-top: 28px">更新</div>
       <div class="upd-row">
@@ -2422,6 +2473,46 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 20px 24px;
   box-sizing: border-box;
+}
+
+.perf-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  cursor: pointer;
+}
+
+.perf-row input {
+  margin-top: 3px;
+  flex: none;
+}
+
+.perf-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  flex: 1;
+}
+
+.perf-title {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.perf-desc {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.perf-warn {
+  font-size: 11px;
+  color: var(--warn);
 }
 
 .upd-row {
