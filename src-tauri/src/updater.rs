@@ -59,6 +59,10 @@ pub fn start(app: AppHandle) {
                     let _ = app.emit("update-available", info);
                 }
                 Ok(None) => {
+                    eprintln!(
+                        "[update] 已是最新版本 {}",
+                        app.package_info().version
+                    );
                     *INFO.lock().unwrap() = None;
                 }
                 Err(e) => eprintln!("[update] 检查失败：{e}"),
