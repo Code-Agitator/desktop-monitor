@@ -1,14 +1,26 @@
 name: release
 
 # 手动触发：Actions -> release -> Run workflow
-# 只负责构建安装包并作为 Actions artifact 提供下载：
-# 不创建 tag、不创建 Release（GitHub Release 必须挂在 tag 上，所以这里干脆不碰）。
+# 构建安装包并自动发布成 GitHub Release（Release 必须挂在 tag 上，所以会创建 v<version>）。
 # 版本号以 package.json 的 version 为准，构建前同步到 tauri.conf.json / Cargo.toml / ui。
+#
+# tag 规则：
+#   已有同版本 Release -> 直接失败（请先升版本号）
+#   只有残留 tag、没有 Release -> 把 tag 移到当前提交再发布（tag 由本流水线接管）
 on:
   workflow_dispatch:
+    inputs:
+      draft:
+        description: "保存为草稿（不立即公开）"
+        type: boolean
+        default: false
+      prerelease:
+        description: "标记为预发布（prerelease）"
+        type: boolean
+        default: false
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release
@@ -16,7 +28,7 @@ concurrency:
 
 jobs:
   build:
-    name: build installer
+    name: build & publish
     runs-on: windows-latest
 
     steps:
@@ -32,6 +44,18 @@ jobs:
           if (-not $v) { throw "package.json 里没有 version 字段" }
           "value=$v" >> $env:GITHUB_OUTPUT
           Write-Host "版本号: $v"
+
+      - name: 检查 v${{ steps.ver.outputs.value }} 是否已发布
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $v = "${{ steps.ver.outputs.value }}"
+          gh release view "v$v" --json tagName *> $null
+          if ($LASTEXITCODE -eq 0) {
+            throw "v$v 已经发布过：请先在 package.json 里升版本号，再重新触发"
+          }
+          Write-Host "v$v 尚未发布，继续"
 
       - name: 同步版本号到 tauri.conf.json / Cargo.toml / ui
         run: node tools/scripts/set-version.mjs ${{ steps.ver.outputs.value }}
@@ -95,7 +119,7 @@ jobs:
           "size_mb={0:N2}" -f ($setup.Length / 1MB) | Write-Host
           Write-Host "sha256: $hash"
 
-      - name: 上传安装包（Actions 页面下载）
+      - name: 上传安装包（Actions 页面保留一份）
         uses: actions/upload-artifact@v4
         with:
           name: desktop-monitor-${{ steps.ver.outputs.value }}
@@ -105,6 +129,32 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: 创建 / 移动 tag v${{ steps.ver.outputs.value }}
+        shell: pwsh
+        run: |
+          $v = "${{ steps.ver.outputs.value }}"
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch --tags --force origin | Out-Null
+          $old = (git rev-parse -q --verify "refs/tags/v$v") 2>$null
+          if ($old) { Write-Host "tag v$v 原指向 $old，改为当前提交" }
+          git tag -f "v$v" "${{ github.sha }}"
+          git push -f origin "refs/tags/v$v"
+          Write-Host "tag v$v -> ${{ github.sha }}"
+
+      - name: 发布 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.value }}
+          name: v${{ steps.ver.outputs.value }}
+          generate_release_notes: true
+          draft: ${{ inputs.draft }}
+          prerelease: ${{ inputs.prerelease }}
+          files: |
+            ${{ steps.out.outputs.path }}
+            ${{ steps.out.outputs.path }}.sha256
+          fail_on_unmatched_files: true
+
       - name: 摘要
         shell: pwsh
         run: |
@@ -113,6 +163,6 @@ jobs:
 
           - 安装包：`${{ steps.out.outputs.name }}`
           - SHA256：`${{ steps.out.outputs.hash }}`
-          - 下载：本页底部 **Artifacts** → `desktop-monitor-${{ steps.ver.outputs.value }}`
-          - 不创建 tag / Release；需要发布时手动上传到 GitHub Release
+          - Release：${{ github.server_url }}/${{ github.repository }}/releases/tag/v${{ steps.ver.outputs.value }}
+          - Artifact（临时）：desktop-monitor-${{ steps.ver.outputs.value }}
           "@ | Out-File $env:GITHUB_STEP_SUMMARY -Encoding utf8

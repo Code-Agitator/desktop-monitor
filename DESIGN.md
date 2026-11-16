@@ -420,7 +420,7 @@ one）。
     - 内置插件随安装包走：`tools/scripts/prepare_bundle.ps1` 把 `build/*` 的 exe + `manifest.json` 铺到 `src-tauri/resources/plugins/`，`bundle.resources` 带上；运行时 `plugins::install_bundled()` 从 `resource_dir()/resources/plugins` 复制到用户插件目录（缺失或版本不同才覆盖）。实测：清空插件目录后启动，两个插件自动铺好。
     - 安装器：`perMachine`（装到 `C:\Program Files\desktop-monitor`，与开发期的目录一致）、简体中文/英文、无语言选择页。
     - 一键出包：`tools/scripts/make_installer.ps1`（stage → tauri build → 打印路径/大小/SHA256）。
-    - CI：`.github/workflows/release.yml`（手动 `workflow_dispatch`，windows-latest）。版本号只认 `package.json`，构建前用 `tools/scripts/set-version.mjs` 同步到 `tauri.conf.json` / `Cargo.toml` / `ui/package.json`；**不创建 tag、也不创建 Release**（GitHub 的 Release 必须挂在 tag 上），产物只有 Actions artifact（安装包 + `.sha256`），需要发布时手动上传；权限也只给 `contents: read`。
+    - CI：`.github/workflows/release.yml`（手动 `workflow_dispatch`，windows-latest）。版本号只认 `package.json`，构建前用 `tools/scripts/set-version.mjs` 同步到 `tauri.conf.json` / `Cargo.toml` / `ui/package.json`；自动发布成 GitHub Release（`v<version>` tag + 安装包 + `.sha256` 附件，自动生成 release notes），同时留一份 Actions artifact；权限 `contents: write`。tag 归流水线管：同版本**已有 Release 就失败**（请升版本号），只有残留 tag 没有 Release 时会把 tag 强制移到当前提交再发布。
     - CI 细节：`pnpm/action-setup` 用 10（和本地一致），`--frozen-lockfile` 两份锁都要过；`ui/package.json` 补了 `pnpm.onlyBuiltDependencies: ["esbuild"]`，否则 pnpm 10 默认拦 postinstall，CI 上 esbuild 二进制装不上。脚本里的仓库根目录改成从 `$PSScriptRoot` 推，别再硬编码 `D:\Work\desktop-monitor`。
 
 
