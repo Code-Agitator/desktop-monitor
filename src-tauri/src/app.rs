@@ -193,6 +193,8 @@ pub fn run() {
     let store = Arc::new(crate::metrics::MetricStore::new(defs));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .invoke_handler(tauri::generate_handler![
             get_bootstrap,
             get_taskbar_config,
@@ -210,7 +212,10 @@ pub fn run() {
             get_screen_size,
             set_panel_edit,
             set_panel_edit_hold,
-            is_panel_edit
+            is_panel_edit,
+            crate::updater::update_check,
+            crate::updater::update_state,
+            crate::updater::app_version
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -224,6 +229,7 @@ pub fn run() {
             }
             crate::overlay::setup(&handle)?;
             crate::sink::start(handle.clone());
+            crate::updater::start(handle.clone());
             // 安装包自带的插件先铺到用户目录，再扫描
             crate::plugins::install_bundled(&handle, plugins.dir());
             plugins.rescan();

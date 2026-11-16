@@ -102,9 +102,12 @@ jobs:
         shell: pwsh
         run: ./tools/scripts/prepare_bundle.ps1
 
-      - name: 打包 NSIS 安装程序
+      - name: 打包 NSIS 安装程序（含自动更新产物）
         shell: pwsh
-        run: pnpm tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: pnpm tauri build --config src-tauri/tauri.release.conf.json
 
       - name: 收集产物与校验和
         id: out
@@ -119,6 +122,29 @@ jobs:
           "path=$($setup.FullName)" >> $env:GITHUB_OUTPUT
           "name=$($setup.Name)" >> $env:GITHUB_OUTPUT
           "hash=$hash" >> $env:GITHUB_OUTPUT
+
+          # 自动更新：tauri-plugin-updater 需要 latest.json（签名 + 安装包 URL）
+          # Tauri v2 的 createUpdaterArtifacts=true 直接给 NSIS 安装包出 .sig，不再生成额外的 zip
+          $sigPath = "$($setup.FullName).sig"
+          if (-not (Test-Path $sigPath)) {
+            throw "没找到签名文件：TAURI_SIGNING_PRIVATE_KEY / PASSWORD 是否配置？"
+          }
+          $signature = (Get-Content $sigPath -Raw).Trim()
+          $url = "https://github.com/${{ github.repository }}/releases/download/v$v/$($setup.Name)"
+          $manifest = [ordered]@{
+            version  = $v
+            notes    = "见 Release 说明"
+            pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+            platforms = [ordered]@{
+              "windows-x86_64" = [ordered]@{ signature = $signature; url = $url }
+            }
+          } | ConvertTo-Json -Depth 6
+          $latest = Join-Path $dir "latest.json"
+          # BOM 会让 serde_json 解析失败，必须写成无 BOM 的 UTF-8
+          [IO.File]::WriteAllText($latest, $manifest, (New-Object System.Text.UTF8Encoding($false)))
+          "latest=$latest" >> $env:GITHUB_OUTPUT
+          "sig=$sigPath" >> $env:GITHUB_OUTPUT
+          Write-Host "updater: $($setup.Name) + latest.json"
           "size_mb={0:N2}" -f ($setup.Length / 1MB) | Write-Host
           Write-Host "sha256: $hash"
 
@@ -129,6 +155,8 @@ jobs:
           path: |
             ${{ steps.out.outputs.path }}
             ${{ steps.out.outputs.path }}.sha256
+            ${{ steps.out.outputs.sig }}
+            ${{ steps.out.outputs.latest }}
           if-no-files-found: error
           retention-days: 90
 
@@ -156,6 +184,8 @@ jobs:
           files: |
             ${{ steps.out.outputs.path }}
             ${{ steps.out.outputs.path }}.sha256
+            ${{ steps.out.outputs.sig }}
+            ${{ steps.out.outputs.latest }}
           fail_on_unmatched_files: true
 
       - name: 摘要

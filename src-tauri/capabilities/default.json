@@ -2,6 +2,16 @@
   "$schema": "https://schema.tauri.app/config/2",
   "identifier": "default",
   "description": "各窗口的默认权限（taskbar* 覆盖任务栏条重建时用的 taskbar-<时间戳> 标签）",
-  "windows": ["panel", "settings", "hud", "taskbar*"],
-  "permissions": ["core:default", "core:window:allow-start-dragging"]
+  "windows": [
+    "panel",
+    "settings",
+    "hud",
+    "taskbar*"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "updater:default",
+    "process:allow-restart"
+  ]
 }

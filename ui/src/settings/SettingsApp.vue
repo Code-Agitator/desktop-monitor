@@ -7,6 +7,8 @@ import Dropdown from "./Dropdown.vue";
 import { buildSnapTargets, snapRect, type Guide, type Rect } from "../snap";
 import { contentBounds, HUD_PAD_X, HUD_PAD_Y } from "../hudLayout";
 import { rendererFor, renderersFor } from "../renderers";
+import { check as checkUpdater } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { THEMES, themeVars } from "../themes";
 import type { Bootstrap, MetricDef, PanelConfig, Sample, WindowConfig } from "../types";
 
@@ -584,6 +586,95 @@ async function refreshPlugins() {
   } catch {}
 }
 
+/* ---------- 自动更新 ---------- */
+
+interface UpdateInfo {
+  version: string;
+  current: string;
+  notes?: string;
+  date?: string;
+}
+
+const appVersion = ref("");
+const updateInfo = ref<UpdateInfo | null>(null);
+const updateChecking = ref(false);
+const updateInstalling = ref(false);
+const updateProgress = ref(0);
+const updateError = ref("");
+
+/** 读当前版本 + Rust 端缓存的检查结果 */
+async function loadUpdateState() {
+  try {
+    appVersion.value = await invoke<string>("app_version");
+    updateInfo.value = await invoke<UpdateInfo | null>("update_state");
+  } catch {
+    // 非 Tauri 环境
+  }
+}
+
+async function checkUpdates() {
+  updateChecking.value = true;
+  updateError.value = "";
+  try {
+    updateInfo.value = await invoke<UpdateInfo | null>("update_check");
+    showNotice(
+      updateInfo.value ? `发现新版本 v${updateInfo.value.version}` : "已是最新版本",
+    );
+  } catch (e) {
+    updateError.value = String(e);
+  } finally {
+    updateChecking.value = false;
+  }
+}
+
+/** 下载并暂存 Update 句柄：下载完再让用户选时机安装（Windows 上 install 会退出应用） */
+let pendingUpdate: Awaited<ReturnType<typeof checkUpdater>> = null;
+const updateDownloaded = ref(false);
+
+async function downloadUpdate() {
+  updateInstalling.value = true;
+  updateProgress.value = 0;
+  updateError.value = "";
+  updateDownloaded.value = false;
+  try {
+    pendingUpdate = await checkUpdater();
+    if (!pendingUpdate) {
+      showNotice("没有可用更新");
+      return;
+    }
+    let total = 0;
+    let got = 0;
+    // download 结束时会自动校验签名，校验失败会 throw
+    await pendingUpdate.download((event) => {
+      if (event.event === "Started") {
+        total = event.data.contentLength ?? 0;
+      } else if (event.event === "Progress") {
+        got += event.data.chunkLength;
+        if (total > 0) updateProgress.value = Math.round((got * 100) / total);
+      }
+    });
+    updateDownloaded.value = true;
+    updateProgress.value = 100;
+    showNotice("更新已下载并校验通过，可以重启安装");
+  } catch (e) {
+    updateError.value = String(e);
+  } finally {
+    updateInstalling.value = false;
+  }
+}
+
+/** 安装已下载的更新：Windows 上会启动安装器并退出应用 */
+async function installDownloaded() {
+  if (!pendingUpdate) return;
+  try {
+    await pendingUpdate.install();
+    // 正常情况下已经退出，这里只是兜底
+    await relaunch();
+  } catch (e) {
+    updateError.value = String(e);
+  }
+}
+
 /* ---------- 设备发现 / 绑定 ---------- */
 
 interface DiscoveredDevice {
@@ -1158,6 +1249,12 @@ onMounted(async () => {
       }),
     );
     unlisten.push(
+      await listen<UpdateInfo>("update-available", (e) => {
+        updateInfo.value = e.payload;
+        showNotice(`发现新版本 v${e.payload.version}`);
+      }),
+    );
+    unlisten.push(
       await listen("plugin-status", () => {
         if (surface.value === "plugins") refreshPlugins();
       }),
@@ -1190,6 +1287,8 @@ onMounted(async () => {
   }
   // 指标下拉要按插件分组，先把插件列表（含显示名）取一次
   refreshPlugins();
+  // 当前版本 + 后台线程已经检查到的更新
+  void loadUpdateState();
   // 卡片里的指标要知道属于哪台设备，所以启动就拉一次（插件端有缓存，很快）
   void refreshDevices(false);
   recalc();
@@ -1616,6 +1715,44 @@ onUnmounted(() => {
         </div>
         <div v-if="!plugins.length" class="empty">
           插件目录里还没有插件，把插件文件夹复制进去就会自动加载
+        </div>
+      </div>
+
+      <div class="plug-title" style="margin-top: 28px">更新</div>
+      <div class="upd-row">
+        <div class="upd-info">
+          <div class="upd-line">当前版本 <b>v{{ appVersion || "—" }}</b></div>
+          <div v-if="updateInfo" class="upd-line upd-new">
+            新版本 v{{ updateInfo.version }}
+            <span v-if="updateInfo.date"> · {{ String(updateInfo.date).slice(0, 10) }}</span>
+          </div>
+          <div v-else class="upd-line upd-dim">已是最新版本</div>
+          <div v-if="updateInstalling" class="upd-line">下载中 {{ updateProgress }}%</div>
+          <div v-if="updateError" class="upd-line upd-err">{{ updateError }}</div>
+        </div>
+        <div class="upd-actions">
+          <button
+            class="btn small"
+            :disabled="updateChecking || updateInstalling"
+            @click="checkUpdates"
+          >
+            {{ updateChecking ? "检查中…" : "检查更新" }}
+          </button>
+          <button
+            v-if="updateInfo && !updateDownloaded"
+            class="btn small primary"
+            :disabled="updateInstalling"
+            @click="downloadUpdate"
+          >
+            {{ updateInstalling ? "下载中 " + updateProgress + "%" : "下载更新" }}
+          </button>
+          <button
+            v-if="updateDownloaded"
+            class="btn small primary"
+            @click="installDownloaded"
+          >
+            重启并安装
+          </button>
         </div>
       </div>
 
@@ -2285,6 +2422,53 @@ onUnmounted(() => {
   overflow-y: auto;
   padding: 20px 24px;
   box-sizing: border-box;
+}
+
+.upd-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.upd-info {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.upd-line {
+  font-size: 12px;
+  color: var(--text);
+}
+
+.upd-line b {
+  color: var(--text-strong);
+  font-weight: 600;
+}
+
+.upd-new {
+  color: #9fd8ff;
+}
+
+.upd-dim {
+  color: var(--text-dim);
+}
+
+.upd-err {
+  color: var(--bad);
+  word-break: break-all;
+}
+
+.upd-actions {
+  display: flex;
+  gap: 8px;
+  flex: none;
 }
 
 .dev-hint {

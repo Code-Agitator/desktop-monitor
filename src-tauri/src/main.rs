@@ -12,6 +12,7 @@ mod sink;
 mod source;
 mod taskbar;
 mod tray;
+mod updater;
 mod windows;
 
 fn main() {
