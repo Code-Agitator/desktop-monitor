@@ -224,6 +224,8 @@ pub fn run() {
             }
             crate::overlay::setup(&handle)?;
             crate::sink::start(handle.clone());
+            // 安装包自带的插件先铺到用户目录，再扫描
+            crate::plugins::install_bundled(&handle, plugins.dir());
             plugins.rescan();
             plugins.watch();
 

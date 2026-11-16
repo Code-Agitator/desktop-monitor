@@ -7,6 +7,7 @@ dist/
 target/
 src-tauri/gen/
 build/
+src-tauri/resources/plugins/
 **/bin/
 **/obj/
 **/publish/
@@ -22,6 +23,11 @@ tools/.logs/
 
 # 本地工具配置
 .claude/
+.idea/
+
+# 图标生成的多余平台目录（只发 Windows）
+src-tauri/icons/android/
+src-tauri/icons/ios/
 
 # 系统
 Thumbs.db

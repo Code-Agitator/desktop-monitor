@@ -219,6 +219,7 @@ impl PluginManager {
         })
     }
 
+
     pub fn dir(&self) -> &Path {
         &self.dir
     }
@@ -669,4 +670,61 @@ fn parse_metrics(plugin_id: &str, value: Option<&Value>) -> Vec<MetricDef> {
             })
         })
         .collect()
+}
+
+/// 把安装包自带的插件铺到用户插件目录：缺失就装，版本不同就覆盖。
+pub fn install_bundled(app: &AppHandle, dest: &Path) {
+    let Ok(res) = app.path().resource_dir() else {
+        return;
+    };
+    // Tauri 会把 resources 放到 <resource_dir>/resources/...，不同版本可能不带这个前缀
+    for base in [res.join("resources").join("plugins"), res.join("plugins")] {
+        if !base.is_dir() {
+            continue;
+        }
+        let Ok(entries) = std::fs::read_dir(&base) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let dir = entry.path();
+            if !dir.is_dir() {
+                continue;
+            }
+            let Some(name) = dir.file_name().map(|n| n.to_os_string()) else {
+                continue;
+            };
+            let target = dest.join(&name);
+            let need = match (manifest_version(&dir), manifest_version(&target)) {
+                (Some(bundled), Some(installed)) => bundled != installed,
+                (Some(_), None) => true,
+                _ => false,
+            };
+            if need {
+                if let Err(e) = copy_dir(&dir, &target) {
+                    eprintln!("[plugin] 安装内置插件失败 {}: {e}", name.to_string_lossy());
+                }
+            }
+        }
+    }
+}
+
+fn manifest_version(dir: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(dir.join("manifest.json")).ok()?;
+    let v: Value = serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()?;
+    v.get("version")?.as_str().map(|s| s.to_string())
+}
+
+fn copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if from.is_dir() {
+            copy_dir(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }

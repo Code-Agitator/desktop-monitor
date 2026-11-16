@@ -415,6 +415,13 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **打包安装程序（2026-11-16）**：`pnpm tauri build` 走 NSIS，产出 `desktop-monitor_0.1.0_x64-setup.exe`（12.4 MB）。
+    - 图标：`tools/make_icon.py` 画 1024px 源图（深色圆角底 + 青色环 + 三根柱），再 `tauri icon` 生成全套（ico/png/Store 尺寸）。
+    - 内置插件随安装包走：`tools/scripts/prepare_bundle.ps1` 把 `build/*` 的 exe + `manifest.json` 铺到 `src-tauri/resources/plugins/`，`bundle.resources` 带上；运行时 `plugins::install_bundled()` 从 `resource_dir()/resources/plugins` 复制到用户插件目录（缺失或版本不同才覆盖）。实测：清空插件目录后启动，两个插件自动铺好。
+    - 安装器：`perMachine`（装到 `C:\Program Files\desktop-monitor`，与开发期的目录一致）、简体中文/英文、无语言选择页。
+    - 一键出包：`tools/scripts/make_installer.ps1`（stage → tauri build → 打印路径/大小/SHA256）。
+    - 坑：`.ps1` 里 `$ErrorActionPreference = "Stop"` 时，CLI 往 stderr 打的进度行会被 PowerShell 当成错误直接终止，构建脚本要用 `Continue` 并自己检查 `$LASTEXITCODE`。
+
   - **托盘「显示面板」改成真正的开关（2026-11-11）**：原来这一项调的是 `overlay::reshow()`——把面板窗口强制显示 + 恢复到全屏 + 重新插到 Progman 之上。问题是面板本来就一直显示，`keep_bottom` 每 120ms 还会再兜一次底，所以它平时是个空操作，只有窗口被意外改过尺寸时才看得出效果，名字却像"显示/隐藏"。
     - 改法：新增 `HIDDEN` 状态 + `overlay::toggle_hidden()`；菜单项文案改「显示/隐藏面板」。隐藏时 `ShowWindow(SW_HIDE)`，并且 `keep_bottom` 与最小化钩子都跳过（否则 120ms 后又被拉回来）；再次点击走 `reshow()` 恢复全屏位置。
     - 进入桌面编辑模式会解除隐藏（否则编辑完面板"不存在"）。
