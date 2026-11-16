@@ -415,6 +415,15 @@ one）。
     - 验证：把投影临时染成红色能扫到 277 个红像素（说明确实在绘制），换回黑色后在你深色壁纸上很含蓄——这是「稍微加点」的预期效果。
     - 开销：空闲 CPU 仍是 **0.35% 整机**（投影是静态绘制，值刷新时随卡片一起重绘，没有额外合成层）。
 
+  - **自动更新（2026-11-16）**：接 tauri-plugin-updater，从 GitHub Release 拉 `latest.json` 自更新。
+    - 后端 `updater.rs`：启动 20s 后检查一次，之后每 6 小时；发现新版本缓存并广播 `update-available`。命令 `update_check` / `update_state` / `app_version`。
+    - 前端：设置页「插件与诊断 → 更新」区块，当前版本 / 新版本 / [检查更新] / [下载更新] / [重启并安装]；下载走 `plugin-updater` 的 `download()`（结束时自动验签），安装走 `install()`（Windows 上会退出应用并拉起 NSIS）。
+    - 签名：`tauri signer generate` 生成密钥，**公钥写进 `src-tauri/tauri.release.conf.json`，私钥只在本地 `~/.tauri/` 和 GitHub Secrets**（`TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`），仓库里不出现私钥。
+    - 构建分两套：本地用 `tauri.conf.json`（不签名，避免没私钥时构建失败）；发布用 `--config src-tauri/tauri.release.conf.json`（`createUpdaterArtifacts: true` + pubkey + 端点 + `installMode: passive`）。
+    - CI：带签名环境变量构建，然后用安装包的 `.sig` 生成 `latest.json`（**Tauri v2 不再产出额外 zip，直接签 NSIS 安装包**），随 Release 一起上传；`notes` 用 ASCII，避免 runner 上 PowerShell 按 ANSI 解析导致乱码。
+    - 验证：用本地 HTTP 服务 + 改端点的临时构建跑通了「检查 → 下载 → 验签」；期间 Tauri 的防篡改检查还正确拦住了「清单版本 9.9.9 但签名版本 0.2.2」的情况。最后一步「重启并安装」要 UAC，留给用户点。
+    - 注意：**0.2.0 及更早的包不含 updater**，只能手动装 0.2.1+；之后再升级就能全自动。另外本机当前直连 github.com 会超时（`curl` 21s 失败），更新会报 `error sending request`，需要代理/网络就绪。
+
   - **内存优化第一档：关掉的窗口不再占内存（2026-11-16）**：HUD / 任务栏条原来关闭时只是 `SW_HIDE`，webview 和它的 renderer 进程都还在（每个 ~80 MB WS / ~32 MB 私有）。
     - 改成**关闭即销毁**：HUD 监管线程发现 `enabled=false` 就 `destroy()`，重新开启时回主线程重建（约 0.3 s）；任务栏条同理，并且每次都换新 label（`taskbar-<ms>`）再挂回 `Shell_TrayWnd`。
     - 实测（13 进程那套）：两者都开 709–724 MB WS / 346–393 MB 私有 → 都关 551 MB WS / 295 MB 私有，**-158 MB WS / -65 MB 私有**，进程 13 → 11、renderer 3 → 1。运行时逐个关闭也能立刻回收（13→12 进程、3→2 renderer，约 1 s 内），重新开启会重建窗口。
